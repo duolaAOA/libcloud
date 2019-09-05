@@ -30,7 +30,6 @@ __all__ = [
     "MalformedResponseError",
     "InvalidCredsError",
     "InvalidCredsException",
-
     "OLD_CONSTANT_TO_NEW_MAPPING"
 ]
 
@@ -110,6 +109,7 @@ class Provider(Type):
     DUMMY = 'dummy'
     ABIQUO = 'abiquo'
     ALIYUN_ECS = 'aliyun_ecs'
+    TENCENT_CVM = 'tencent_cvm'
     AURORACOMPUTE = 'aurora_compute'
     AZURE = 'azure'
     BLUEBOX = 'bluebox'
@@ -217,15 +217,14 @@ class Provider(Type):
     # SLICEHOST = 'slicehost'
 
 
-DEPRECATED_RACKSPACE_PROVIDERS = [Provider.RACKSPACE_UK,
-                                  Provider.RACKSPACE_NOVA_BETA,
-                                  Provider.RACKSPACE_NOVA_DFW,
-                                  Provider.RACKSPACE_NOVA_LON,
-                                  Provider.RACKSPACE_NOVA_ORD]
+DEPRECATED_RACKSPACE_PROVIDERS = [
+    Provider.RACKSPACE_UK, Provider.RACKSPACE_NOVA_BETA,
+    Provider.RACKSPACE_NOVA_DFW, Provider.RACKSPACE_NOVA_LON,
+    Provider.RACKSPACE_NOVA_ORD
+]
 OLD_CONSTANT_TO_NEW_MAPPING = {
     # Rackspace
     Provider.RACKSPACE_UK: Provider.RACKSPACE_FIRST_GEN,
-
     Provider.RACKSPACE_NOVA_BETA: Provider.RACKSPACE,
     Provider.RACKSPACE_NOVA_DFW: Provider.RACKSPACE,
     Provider.RACKSPACE_NOVA_LON: Provider.RACKSPACE,
@@ -351,6 +350,7 @@ class DeploymentError(LibcloudError):
     :ivar node: :class:`Node` on which this exception happened, you might want
                 to call :func:`Node.destroy`
     """
+
     def __init__(self, node, original_exception=None, driver=None):
         self.node = node
         self.value = original_exception
@@ -360,8 +360,8 @@ class DeploymentError(LibcloudError):
         return self.__repr__()
 
     def __repr__(self):
-        return (('<DeploymentError: node=%s, error=%s, driver=%s>'
-                % (self.node.id, str(self.value), str(self.driver))))
+        return (('<DeploymentError: node=%s, error=%s, driver=%s>' %
+                 (self.node.id, str(self.value), str(self.driver))))
 
 
 class KeyPairError(LibcloudError):
