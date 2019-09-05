@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Node driver for Aliyun.
+Node driver for Tencent.
 """
 
 try:
@@ -24,7 +24,7 @@ import time
 import base64
 import hashlib
 
-from libcloud.common.tencent import TencentXmlResponse, SignedTencentConnection
+from libcloud.common.tencent import TencentHTTPResponse, SignedTencentConnection
 from libcloud.common.types import LibcloudError
 from libcloud.compute.base import Node, NodeDriver, NodeImage, NodeSize, \
     StorageVolume, VolumeSnapshot, NodeLocation, KeyPair
@@ -36,6 +36,11 @@ from libcloud.utils.xml import findall, findattr, findtext
 from libcloud.utils.publickey import get_pubkey_ssh2_fingerprint
 from libcloud.utils.publickey import get_pubkey_comment
 
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
+from tencentcloud.cvm.v20170312 import cvm_client, models
 __all__ = [
     'DiskCategory', 'InternetChargeType', 'CVM_API_VERSION', 'CVMDriver',
     'CVMSecurityGroup', 'CVMZone'
@@ -349,14 +354,14 @@ RESOURCE_EXTRA_ATTRIBUTES_MAP = {
 }
 
 
-class CVMConnection(SignedAliyunConnection):
+class CVMConnection(SignedTencentConnection):
     """
-    Represents a single connection to the Aliyun CVM Endpoint.
+    Represents a single connection to the Tencent CVM Endpoint.
     """
 
     api_version = CVM_API_VERSION
     host = CVM_API_ENDPOINT
-    responseCls = AliyunXmlResponse
+    responseCls = TencentHTTPResponse
     service_name = 'cvm'
 
 
@@ -432,7 +437,7 @@ class CVMZone(object):
 
 class InternetChargeType(object):
     """
-    Internet connection billing types for Aliyun Nodes.
+    Internet connection billing types for Tencent Nodes.
     """
     BY_BANDWIDTH = 'PayByBandwidth'
     BY_TRAFFIC = 'PayByTraffic'
@@ -440,7 +445,7 @@ class InternetChargeType(object):
 
 class DiskCategory(object):
     """
-    Enum defined disk types supported by Aliyun system and data disks.
+    Enum defined disk types supported by Tencent system and data disks.
     """
     CLOUD = 'cloud'
     CLOUD_EFFICIENCY = 'cloud_efficiency'
@@ -484,11 +489,11 @@ class Pagination(object):
                 (self.total, self.size, self.current))
 
 
-class TencentAPINodeDriver(NodeDriver):
+class CVMDriver(NodeDriver):
     """
-    Aliyun CVM node driver.
+    Tencent CVM node driver.
 
-    Used for Aliyun CVM service.
+    Used for Tencent CVM service.
 
     TODO:
     Get guest OS root password
@@ -545,8 +550,8 @@ class TencentAPINodeDriver(NodeDriver):
                               use ``list`` object, the driver will convert it.
         :type   ex_filters: ``dict``
         """
-
-        params = {'Action': 'DescribeInstances', 'RegionId': self.region}
+        params = models.DescribeInstances()
+        params['RegionId'] = self.region
 
         if ex_node_ids:
             if isinstance(ex_node_ids, list):
@@ -1422,12 +1427,13 @@ class TencentAPINodeDriver(NodeDriver):
                              use ``list`` object, the driver will convert it.
         :type ex_filters: ``dict``
         """
-
         if location and isinstance(location, NodeLocation):
             region = location.id
         else:
             region = self.region
-        params = {'Action': 'DescribeImages', 'RegionId': region}
+        req = models.DescribeImagesRequest()
+        params = '{}'
+        req.from_json_string(params)
         if ex_image_ids:
             if isinstance(ex_image_ids, list):
                 params['ImageId'] = ','.join(ex_image_ids)
@@ -1438,22 +1444,26 @@ class TencentAPINodeDriver(NodeDriver):
             for key in ex_filters.keys():
                 params[key] = ex_filters[key]
 
-        def _parse_response(resp_body):
-            image_elements = findall(resp_body,
-                                     'Images/Image',
-                                     namespace=self.namespace)
-            images = [self._to_image(each) for each in image_elements]
-            return images
-
-        return self._request_multiple_pages(self.path, params, _parse_response)
+        client = self._request_client(region)
+        try:
+            resp = client.DescribeImages(req)
+            res = json.loads(resp.to_json_string()).get('ImageSet', [])
+        except TencentCloudSDKException as err:
+            print(err)
+            res = []
+        return res
 
     def create_image(self,
                      node,
                      name,
-                     description=None,
-                     ex_snapshot_id=None,
-                     ex_image_version=None,
-                     ex_client_token=None):
+                     InstanceId=None,
+                     ImageDescription=None,
+                     ForcePoweroff=None,
+                     Sysprep=None,
+                     Reboot=None,
+                     DataDiskIds=[],
+                     SnapshotIds=[],
+                     DryRun=None):
         """
         Creates an image from a system disk snapshot.
 
@@ -1470,23 +1480,41 @@ class TencentAPINodeDriver(NodeDriver):
                                   each request.
         :type ex_client_token: ``str``
         """
-        params = {'Action': 'CreateImage', 'RegionId': self.region}
+        params = {}
         if name:
             params['ImageName'] = name
-        if description:
-            params['Description'] = description
-        if ex_snapshot_id:
-            params['SnapshotId'] = ex_snapshot_id
         else:
-            raise AttributeError('ex_snapshot_id is required')
-        if ex_image_version:
-            params['ImageVersion'] = ex_image_version
-        if ex_client_token:
-            params['ClientToken'] = ex_client_token
+            raise AttributeError('ImageName is required')
+        if InstanceId:
+            params['InstanceId'] = InstanceId
+        if ImageDescription:
+            params['ImageDescription'] = ImageDescription
+        if ForcePoweroff:
+            params['ForcePoweroff'] = ForcePoweroff
+        if Sysprep:
+            params['Sysprep'] = Sysprep
+        if Reboot:
+            params['Reboot'] = Reboot
+        if DataDiskIds:
+            params['DataDiskIds'] = DataDiskIds
+        if SnapshotIds:
+            params['SnapshotIds'] = SnapshotIds
+        if DryRun:
+            params['DryRun'] = DryRun
+        req = models.CreateImageRequest()
+        req.from_json_string(json.dumps(params))
 
-        resp = self.connection.request(self.path, params)
-        image_id = findtext(resp.object, 'ImageId', namespace=self.namespace)
-        return self.get_image(image_id=image_id)
+        client = self._request_client(self.region)
+        try:
+            resp = client.CreateImage(req)
+            res = json.loads(resp.to_json_string())
+        except TencentCloudSDKException as err:
+            raise TencentCloudSDKException(code=400, message=err)
+        return res
+
+        # resp = self.connection.request(self.path, params)
+        # image_id = findtext(resp.object, 'ImageId', namespace=self.namespace)
+        # return self.get_image(image_id=image_id)
 
     def delete_image(self, node_image):
         params = {
@@ -1932,6 +1960,16 @@ class TencentAPINodeDriver(NodeDriver):
         return Pagination(total=total_count,
                           size=page_size,
                           current=page_number)
+
+    def _request_client(self, region):
+        cred = credential.Credential(self.key, self.secret)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "cvm.tencentcloudapi.com"
+
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = cvm_client.CvmClient(cred, region, clientProfile)
+        return client
 
     def _request_multiple_pages(self, path, params, parse_func):
         """

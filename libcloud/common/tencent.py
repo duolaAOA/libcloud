@@ -24,7 +24,12 @@ import time
 import requests
 
 from libcloud.common.base import ConnectionUserAndKey, JsonResponse
+
+from libcloud.utils.py3 import b, u, urlquote, PY3
+
 from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
 from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
 from tencentcloud.cvm.v20170312 import cvm_client, models
 
@@ -90,7 +95,7 @@ class TencentRequestSignerAlgorithmV1_0(TencentRequestSigner):
                        percentEncode('/') + '&' +
                        percentEncode(CanonicalizedQueryString)
         """
-        url = 'account.api.qcloud.com/v2/index.php'
+        url = 'cvm.tencentcloudapi.com'
         signature_old = ''
         for i in sorted(params):
             signature_old = signature_old + i + "=" + str(params[i]) + '&'
@@ -137,7 +142,6 @@ class SignedTencentConnection(TencentConnection):
                                                 retry_delay=retry_delay,
                                                 backoff=backoff)
 
-        cred = credential.Credential(self.user_id, self.key)
         self.signature_version = str(signature_version)
 
         if self.signature_version == '1.0':
@@ -152,10 +156,11 @@ class SignedTencentConnection(TencentConnection):
             if self.api_version is None:
                 raise ValueError('Unsupported null api_version')
 
-        self.signer = cvm_client.CvmClient(cred, 'ap-beijing')
+        self.signer = signer_cls(access_key=self.user_id,
+                                 access_secret=self.key,
+                                 version=self.api_version)
 
     def add_default_params(self, params):
-        params = {'Action': 'DescribeProject', 'Region': 'bj', 'allList': 1}
         params = self.signer.get_request_params(params=params,
                                                 method=self.method,
                                                 path=self.action)
