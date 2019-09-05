@@ -27,12 +27,6 @@ from libcloud.common.base import ConnectionUserAndKey, JsonResponse
 
 from libcloud.utils.py3 import b, u, urlquote, PY3
 
-from tencentcloud.common import credential
-from tencentcloud.common.profile.client_profile import ClientProfile
-from tencentcloud.common.profile.http_profile import HttpProfile
-from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
-from tencentcloud.cvm.v20170312 import cvm_client, models
-
 __all__ = [
     'TencentHTTPResponse', 'TencentRequestSigner',
     'TencentRequestSignerAlgorithmV1_0', 'SignedTencentConnection',
