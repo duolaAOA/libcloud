@@ -586,13 +586,8 @@ class CVMDriver(NodeDriver):
         req.from_json_string(json.dumps(params))
 
         client = self._request_client(self.region)
-        try:
-            resp = client.DescribeZones(req)
-            locations = json.loads(resp.to_json_string()).get('ZoneSet', [])
-        except TencentCloudSDKException as err:
-            print(err)
-            locations = []
-
+        resp = client.DescribeZones(req)
+        locations = json.loads(resp.to_json_string()).get('ZoneSet', [])
         return locations
 
     def create_node(self,
@@ -1441,12 +1436,8 @@ class CVMDriver(NodeDriver):
         req.from_json_string(json.dumps(params))
 
         client = self._request_client(region)
-        try:
-            resp = client.DescribeImages(req)
-            res = json.loads(resp.to_json_string()).get('ImageSet', [])
-        except TencentCloudSDKException as err:
-            print(err)
-            res = []
+        resp = client.DescribeImages(req)
+        res = json.loads(resp.to_json_string()).get('ImageSet', [])
         return res
 
     def create_public_ip(self, instance_id):
