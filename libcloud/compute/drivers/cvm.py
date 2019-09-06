@@ -1134,16 +1134,15 @@ class CVMDriver(NodeDriver):
         :return: list of zones
         :rtype: ``list`` of ``CVMZone``
         """
-        params = {'Action': 'DescribeZones'}
-        if region_id:
-            params['RegionId'] = region_id
-        else:
-            params['RegionId'] = self.region
-        resp_body = self.connection.request(self.path, params).object
-        zone_elements = findall(resp_body,
-                                'Zones/Zone',
-                                namespace=self.namespace)
-        zones = [self._to_zone(el) for el in zone_elements]
+        region = region_id if region_id else self.region
+
+        req = models.DescribeZonesRequest()
+        params = '{}'
+        req.from_json_string(params)
+
+        client = self._request_client(region)
+        resp = client.DescribeZones(req)
+        zones = json.loads(resp.to_json_string()).get('ZoneSet', [])
         return zones
 
     ##
