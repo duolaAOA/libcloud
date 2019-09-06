@@ -550,34 +550,48 @@ class CVMDriver(NodeDriver):
                               use ``list`` object, the driver will convert it.
         :type   ex_filters: ``dict``
         """
-        params = models.DescribeInstances()
-        params['RegionId'] = self.region
+        #TODO: not implement testcase of this function
 
+        req = models.DescribeInstancesRequest()
+        params = {}
         if ex_node_ids:
             if isinstance(ex_node_ids, list):
-                params['InstanceIds'] = self._list_to_json_array(ex_node_ids)
+                params['InstanceIds'] = ex_node_ids
             else:
                 raise AttributeError('ex_node_ids should be a list of '
                                      'node ids.')
 
         if ex_filters:
-            if isinstance(ex_filters, dict):
-                params.update(ex_filters)
+            if isinstance(ex_filters, list):
+                params['Filters'] = ex_filters
             else:
                 raise AttributeError('ex_filters should be a dict of '
                                      'node attributes.')
 
-        nodes = self._request_multiple_pages(self.path, params, self._to_nodes)
+        req.from_json_string(json.dumps(params))
+        client = self._request_client(self.region)
+        resp = client.DescribeInstances(req)
+        nodes = json.loads(resp.to_json_string()).get('InstnceSet', [])
         return nodes
 
     def list_sizes(self, location=None):
-        params = {'Action': 'DescribeInstanceTypes'}
 
-        resp_body = self.connection.request(self.path, params).object
-        size_elements = findall(resp_body,
-                                'InstanceTypes/InstanceType',
-                                namespace=self.namespace)
-        sizes = [self._to_size(each) for each in size_elements]
+        if location and isinstance(location, NodeLocation):
+            region = location.id
+        else:
+            region = self.region
+
+        req = models.DescribeInstanceTypeConfigsRequest()
+        params = {}
+        req.from_json_string(json.dumps(params))
+
+        client = self._request_client(region)
+        resp = client.DescribeInstanceTypeConfigs(req)
+        res = json.loads(resp.to_json_string()).get('InstanceTypeConfigSet',
+                                                    [])
+        sizes = []
+        for r in res:
+            sizes.append(r.get('InstanceType'))
         return sizes
 
     def list_locations(self):
@@ -587,7 +601,11 @@ class CVMDriver(NodeDriver):
 
         client = self._request_client(self.region)
         resp = client.DescribeZones(req)
-        locations = json.loads(resp.to_json_string()).get('ZoneSet', [])
+        res = json.loads(resp.to_json_string()).get('ZoneSet', [])
+        locations = []
+
+        for r in res:
+            locations.append(r.get('Zone'))
         return locations
 
     def create_node(self,
@@ -1437,6 +1455,10 @@ class CVMDriver(NodeDriver):
         client = self._request_client(region)
         resp = client.DescribeImages(req)
         res = json.loads(resp.to_json_string()).get('ImageSet', [])
+
+        def _parse_response(resp_body):
+            raise NotImplementedError()
+
         return res
 
     def create_public_ip(self, instance_id):
