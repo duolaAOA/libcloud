@@ -521,19 +521,13 @@ class CVMDriverTestCase(LibcloudTestCase):
 #         self.assertEqual('Accept', sga.policy)
 #         self.assertEqual('internet', sga.nic_type)
 
-#     def test_ex_list_zones(self):
-#         zones = self.driver.ex_list_zones()
-#         self.assertEqual(1, len(zones))
-#         zone = zones[0]
-#         self.assertEqual('cn-qingdao-b', zone.id)
-#         self.assertEqual(self.driver, zone.driver)
-#         self.assertEqual('青岛可用区B', zone.name)
-#         self.assertIsNotNone(zone.available_resource_types)
-#         self.assertEqual('IoOptimized', zone.available_resource_types[0])
-#         self.assertIsNotNone(zone.available_instance_types)
-#         self.assertEqual('cvm.m2.medium', zone.available_instance_types[0])
-#         self.assertIsNotNone(zone.available_disk_categories)
-#         self.assertEqual('cloud_ssd', zone.available_disk_categories[0])
+    def test_ex_list_zones(self):
+        zones = self.driver.ex_list_zones()
+        self.assertEqual(5, len(zones))
+        zone = zones[0]
+        self.assertEqual('ap-beijing-1', zone['Zone'])
+        self.assertEqual(self.driver.name, 'Tencent CVM')
+        self.assertEqual('北京一区', zone['ZoneName'])
 
 
 class CVMMockHttp(MockHttp):
