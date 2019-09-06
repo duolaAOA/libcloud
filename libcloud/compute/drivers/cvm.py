@@ -581,13 +581,18 @@ class CVMDriver(NodeDriver):
         return sizes
 
     def list_locations(self):
-        params = {'Action': 'DescribeRegions'}
+        req = models.DescribeZonesRequest()
+        params = {}
+        req.from_json_string(json.dumps(params))
 
-        resp_body = self.connection.request(self.path, params).object
-        location_elements = findall(resp_body,
-                                    'Regions/Region',
-                                    namespace=self.namespace)
-        locations = [self._to_location(each) for each in location_elements]
+        client = self._request_client(self.region)
+        try:
+            resp = client.DescribeZones(req)
+            locations = json.loads(resp.to_json_string()).get('ZoneSet', [])
+        except TencentCloudSDKException as err:
+            print(err)
+            locations = []
+
         return locations
 
     def create_node(self,

@@ -191,12 +191,17 @@ class CVMDriverTestCase(LibcloudTestCase):
     #     self.assertEqual(2, size.extra['cpu_core_count'])
     #     self.assertEqual('cvm.s2', size.extra['instance_type_family'])
 
-    # def test_list_locations(self):
-    #     locations = self.driver.list_locations()
-    #     self.assertEqual(9, len(locations))
-    #     location = locations[0]
-    #     self.assertEqual('ap-southeast-1', location.id)
-    #     self.assertIsNone(location.country)
+    def test_list_locations(self):
+        locations = self.driver.list_locations()
+        self.assertEqual(5, len(locations))
+        location = locations[0]
+        except_location = {
+            'Zone': 'ap-beijing-1',
+            'ZoneId': '800001',
+            'ZoneName': '北京一区',
+            'ZoneState': 'AVAILABLE'
+        }
+        self.assertEqual(except_location, location)
 
     # def test_create_node_without_sg_id_exception(self):
     #     name = 'test_create_node_without_sg_id_exception'
