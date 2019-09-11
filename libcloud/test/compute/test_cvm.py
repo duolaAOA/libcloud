@@ -195,12 +195,7 @@ class CVMDriverTestCase(LibcloudTestCase):
         locations = self.driver.list_locations()
         self.assertEqual(5, len(locations))
         location = locations[0]
-        except_location = {
-            'Zone': 'ap-beijing-1',
-            'ZoneId': '800001',
-            'ZoneName': '北京一区',
-            'ZoneState': 'AVAILABLE'
-        }
+        except_location = 'ap-beijing-1'
         self.assertEqual(except_location, location)
 
     # def test_create_node_without_sg_id_exception(self):
