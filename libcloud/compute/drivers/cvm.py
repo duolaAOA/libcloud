@@ -870,7 +870,7 @@ class CVMDriver(NodeDriver):
 
         return res
 
-    def ex_create_security_group(self, description=None, client_token=None):
+    def ex_create_security_group(self, description=None, name=None):
         """
         Create a new security group.
 
@@ -881,16 +881,22 @@ class CVMDriver(NodeDriver):
                                   each request.
         :type client_token: ``str``
         """
-        params = {'Action': 'CreateSecurityGroup', 'RegionId': self.region}
-
+        params = {}
         if description:
-            params['Description'] = description
-        if client_token:
-            params['ClientToken'] = client_token
-        resp = self.connection.request(self.path, params)
-        return findtext(resp.object,
-                        'SecurityGroupId',
-                        namespace=self.namespace)
+            params['GroupDescription'] = description
+        else:
+            AttributeError('GroupDescription is required')
+        if name:
+            params['GroupName'] = name
+        else:
+            AttributeError('GroupName is required')
+
+        req = vpc_models.CreateSecurityGroupRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._vpc_client(self.region)
+        resp = client.CreateSecurityGroup(req)
+        res = json.loads(resp.to_json_string()).get('SecurityGroup', {})
+        return res
 
     def ex_delete_security_group_by_id(self, group_id=None):
         """
@@ -899,13 +905,19 @@ class CVMDriver(NodeDriver):
         :keyword group_id: security group id
         :type group_id: ``str``
         """
-        params = {
-            'Action': 'DeleteSecurityGroup',
-            'RegionId': self.region,
-            'SecurityGroupId': group_id
-        }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+        params = {}
+        if group_id:
+            params['SecurityGroupId'] = group_id
+        else:
+            AttributeError('SecurityGroupId is required')
+
+        req = vpc_models.DeleteSecurityGroupRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._vpc_client(self.region)
+        resp = client.DeleteSecurityGroup(req)
+        RequestID = json.loads(resp.to_json_string()).get('RequestID', {})
+
+        return RequestID
 
     def ex_modify_security_group_by_id(self,
                                        group_id=None,
