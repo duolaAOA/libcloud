@@ -1922,66 +1922,89 @@ class CVMDriver(NodeDriver):
 
     # Key pair management methods
 
-    def list_key_pairs(self, fingerprint=None):
-        params = {'Action': 'DescribeKeyPairs', 'RegionId': self.region}
-        if fingerprint:
-            params['KeyPairFingerPrint'] = fingerprint
-        response = self.connection.request(self.path, params=params)
-        elems = findall(element=response.object,
-                        xpath='KeyPairs/KeyPair',
-                        namespace=self.namespace)
+    def list_key_pairs(self, key_id=None):
+        params = {}
+        if isinstance(key_id, str):
+            KeyIds = [key_id]
+        elif isinstance(key_id, list):
+            KeyIds = key_id
+        if KeyIds:
+            params['KeyIds'] = KeyIds
+        req = models.DescribeKeyPairsRequest()
+        req.from_json_string(json.dumps(params))
 
-        key_pairs = self._to_key_pairs(elems=elems)
+        client = self._cvm_client(region)
+        resp = client.DescribeKeyPairs(req)
+
+        key_elements = json.loads(resp.to_json_string()).get('KeyPairSet', [])
+
+        key_pairs = [self._to_key_pair(elem=elem) for elem in key_elements]
         return key_pairs
 
     def get_key_pair(self, name):
+        params = {}
+        Filters = [{'Name': 'key-name', 'Values': [name]}]
+        params['Filters'] = Filters
+        req = models.DescribeKeyPairsRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.DescribeKeyPairs(req)
+
+        key_elements = json.loads(resp.to_json_string()).get('KeyPairSet', [])
+
+        key_pairs = [self._to_key_pair(elem=elem) for elem in key_elements]
+        if key_pairs:
+            return key_pairs[0]
+        else:
+            return []
+
+    def create_key_pair(self, name, project_id=None):
+        params = {'KeyName': name, 'ProjectId': project_id}
+        req = models.CreateKeyPairRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.CreateKeyPair(req)
+        key_elements = json.loads(resp.to_json_string()).get('KeyPair', [])
+        key_pair = self._to_key_pair(elem=key_elements)
+        return key_pair
+
+    def import_key_pair_from_string(self, name, project_id=None, publickey):
         params = {
-            'Action': 'DescribeKeyPairs',
             'KeyName': name,
-            'RegionId': self.region
+            'ProjectId': project_id,
+            'PublicKey': PublicKey
         }
+        req = models.ImportKeyPairRequest()
+        req.from_json_string(json.dumps(params))
 
-        response = self.connection.request(self.path, params=params)
-        elems = findall(element=response.object,
-                        xpath='KeyPairs/KeyPair',
-                        namespace=self.namespace)
-        key_pair = self._to_key_pairs(elems=elems)[0]
-        return key_pair
+        client = self._cvm_client(region)
+        resp = client.ImportKeyPair(req)
+        key_ID = json.loads(resp.to_json_string()).get('KeyId', [])
+        return KeyPair(name=key_ID,
+                       public_key=None,
+                       fingerprint=None,
+                       driver=self)
 
-    def create_key_pair(self, name):
-        params = {
-            'Action': 'CreateKeyPair',
-            'KeyName': name,
-            'RegionId': self.region
-        }
+    def delete_key_pair(self, key_id):
+        if isinstance(key_id, str):
+            keyId = [key_id]
+        elif isinstance(key_id, list):
+            keyId = key_id
+        else:
+            raise AttributeError('keyId must be list of string or string')
 
-        response = self.connection.request(self.path, params=params)
-        elem = response.object
-        key_pair = self._to_key_pair(elem=elem)
-        return key_pair
+        params = {'KeyIds': keyId}
+        req = models.DeleteKeyPairsRequest()
+        req.from_json_string(json.dumps(params))
 
-    def import_key_pair_from_string(self, name, key_material):
-        params = {
-            'Action': 'ImportKeyPair',
-            'KeyPairName': name,
-            'PublicKeyBody': key_material,
-            'RegionId': self.region
-        }
+        client = self._cvm_client(region)
+        resp = client.DeleteKeyPairs(req)
 
-        response = self.connection.request(self.path, params=params)
-        elem = response.object
-        key_pair = self._to_key_pair(elem=elem)
-        return key_pair
+        RequestId = json.loads(resp.to_json_string()).get('RequestId', [])
 
-    def delete_key_pair(self, key_pair):
-        params = {
-            'Action': 'DeleteKeyPairs',
-            'KeyPairNames': '["%s"]' % key_pair.name,
-            'RegionId': self.region
-        }
-        res = self.connection.request(self.path, params=params)
-
-        return res.status == 200
+        return RequestId
 
     def _get_pubkey_ssh2_fingerprint(self, pubkey):
         key = base64.b64decode(pubkey.strip().split()[1].encode('ascii'))
@@ -2016,23 +2039,14 @@ class CVMDriver(NodeDriver):
 
         return result
 
-    def _to_key_pairs(self, elems):
-        key_pairs = [self._to_key_pair(elem=elem) for elem in elems]
-        return key_pairs
+    def _to_key_pair(self, keys):
+        name = keys['KeyName']
+        public_key = keys['PublicKey']
 
-    def _to_key_pair(self, elem):
-        name = findtext(element=elem,
-                        xpath='KeyPairName',
-                        namespace=self.namespace)
-        fingerprint = findtext(element=elem,
-                               xpath='KeyPairFingerPrint',
-                               namespace=self.namespace).strip()
-
-        key_pair = KeyPair(name=name,
-                           public_key=None,
-                           fingerprint=fingerprint,
-                           driver=self)
-        return key_pair
+        return KeyPair(name=name,
+                       public_key=public_key,
+                       fingerprint=None,
+                       driver=self)
 
     def ex_allocate_public_ip(self, node):
         params = {}
