@@ -41,6 +41,9 @@ from tencentcloud.common.profile.client_profile import ClientProfile
 from tencentcloud.common.profile.http_profile import HttpProfile
 from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
 from tencentcloud.cvm.v20170312 import cvm_client, models
+from tencentcloud.cbs.v20170312 import cbs_client
+from tencentcloud.cbs.v20170312 import models as cbs_models
+
 __all__ = [
     'DiskCategory', 'InternetChargeType', 'CVM_API_VERSION', 'CVMDriver',
     'CVMSecurityGroup', 'CVMZone'
@@ -569,7 +572,7 @@ class CVMDriver(NodeDriver):
                                      'node attributes.')
 
         req.from_json_string(json.dumps(params))
-        client = self._request_client(self.region)
+        client = self._cvm_client(self.region)
         resp = client.DescribeInstances(req)
         nodes = json.loads(resp.to_json_string()).get('InstnceSet', [])
         return nodes
@@ -585,13 +588,11 @@ class CVMDriver(NodeDriver):
         params = {}
         req.from_json_string(json.dumps(params))
 
-        client = self._request_client(region)
+        client = self._cvm_client(region)
         resp = client.DescribeInstanceTypeConfigs(req)
         res = json.loads(resp.to_json_string()).get('InstanceTypeConfigSet',
                                                     [])
-        sizes = []
-        for r in res:
-            sizes.append(r.get('InstanceType'))
+        sizes = [self._to_size(each) for each in res]
         return sizes
 
     def list_locations(self):
@@ -599,13 +600,10 @@ class CVMDriver(NodeDriver):
         params = {}
         req.from_json_string(json.dumps(params))
 
-        client = self._request_client(self.region)
+        client = self._cvm_client(self.region)
         resp = client.DescribeZones(req)
         res = json.loads(resp.to_json_string()).get('ZoneSet', [])
-        locations = []
-
-        for r in res:
-            locations.append(r.get('Zone'))
+        locations = [self._to_location(each) for each in res]
         return locations
 
     def create_node(self,
@@ -1154,13 +1152,42 @@ class CVMDriver(NodeDriver):
         """
         region = region_id if region_id else self.region
 
+        # get zone info
         req = models.DescribeZonesRequest()
-        params = '{}'
+        params = {}
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.DescribeZones(req)
+        zone_elements = json.loads(resp.to_json_string()).get('ZoneSet', [])
+
+        zones = [self._to_zone(el) for el in zone_elements]
+
+        # get instance info
+        req = models.DescribeInstanceTypeConfigsRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.DescribeInstanceTypeConfigs(req)
+        instances = json.loads(resp.to_json_string()).get(
+            'InstanceTypeConfigSet', [])
+
+        instances_elements = self._to_instance(instances)
+
+        # get disk info
+        req = cbs_models.DescribeDiskConfigQuotaRequest()
+        params = '{"InquiryType":"INQUIRY_CVM_CONFIG"}'
         req.from_json_string(params)
 
-        client = self._request_client(region)
-        resp = client.DescribeZones(req)
-        zones = json.loads(resp.to_json_string()).get('ZoneSet', [])
+        client = self._cbs_client(region)
+        resp = client.DescribeDiskConfigQuota(req)
+        disks = json.loads(resp.to_json_string()).get('DiskConfigSet', [])
+        disks_elements = self._to_disk(disks)
+
+        for zone in zones:
+            zone.available_instance_types = instances_elements.get(zone.id, [])
+            zone.available_disk_categories = list(
+                disks_elements.get(zone.id, set([])))
         return zones
 
     ##
@@ -1452,14 +1479,15 @@ class CVMDriver(NodeDriver):
         params = {}
         req.from_json_string(json.dumps(params))
 
-        client = self._request_client(region)
+        client = self._cvm_client(region)
         resp = client.DescribeImages(req)
         res = json.loads(resp.to_json_string()).get('ImageSet', [])
 
-        def _parse_response(resp_body):
-            raise NotImplementedError()
+        def _parse_response(res):
+            images = [self._to_image(each) for each in res]
+            return images
 
-        return res
+        return _parse_response(res)
 
     def create_public_ip(self, instance_id):
         """
@@ -1737,15 +1765,12 @@ class CVMDriver(NodeDriver):
                               created=created,
                               state=state)
 
-    def _to_size(self, element):
-        _id = findtext(element, 'InstanceTypeId', namespace=self.namespace)
-        ram = float(findtext(element, 'MemorySize', namespace=self.namespace))
+    def _to_size(self, resp):
+        _id = resp['InstanceType']
+        ram = float(0)
         extra = {}
-        extra['cpu_core_count'] = int(
-            findtext(element, 'CpuCoreCount', namespace=self.namespace))
-        extra['instance_type_family'] = findtext(element,
-                                                 'InstanceTypeFamily',
-                                                 namespace=self.namespace)
+        extra['cpu_core_count'] = int(resp['CPU'])
+        extra['instance_type_family'] = resp['InstanceFamily']
         return NodeSize(id=_id,
                         name=_id,
                         ram=ram,
@@ -1755,18 +1780,15 @@ class CVMDriver(NodeDriver):
                         driver=self,
                         extra=extra)
 
-    def _to_location(self, element):
-        _id = findtext(element, 'RegionId', namespace=self.namespace)
-        localname = findtext(element, 'LocalName', namespace=self.namespace)
+    def _to_location(self, resp):
+        _id = resp['Zone']
+        localname = resp['ZoneName']
         return NodeLocation(id=_id, name=localname, country=None, driver=self)
 
-    def _to_image(self, element):
-        _id = findtext(element, 'ImageId', namespace=self.namespace)
-        name = findtext(element, 'ImageName', namespace=self.namespace)
-        extra = self._get_extra_dict(element,
-                                     RESOURCE_EXTRA_ATTRIBUTES_MAP['image'])
-        extra['disk_device_mappings'] = self._get_disk_device_mappings(
-            element.find('DiskDeviceMappings'))
+    def _to_image(self, resp):
+        _id = resp['ImageId']
+        name = resp['ImageName']
+        extra = {'arch': resp['Architecture'], 'family': resp['Platform']}
         return NodeImage(id=_id, name=name, driver=self, extra=extra)
 
     def _get_disk_device_mappings(self, element):
@@ -1810,29 +1832,38 @@ class CVMDriver(NodeDriver):
                                          policy=policy,
                                          nic_type=nic_type)
 
-    def _to_zone(self, element):
-        _id = findtext(element, 'ZoneId', namespace=self.namespace)
-        local_name = findtext(element, 'LocalName', namespace=self.namespace)
-        resource_types = findall(element,
-                                 'AvailableResourceCreation/ResourceTypes',
-                                 namespace=self.namespace)
-        instance_types = findall(element,
-                                 'AvailableInstanceTypes/InstanceTypes',
-                                 namespace=self.namespace)
-        disk_categories = findall(element,
-                                  'AvailableDiskCategories/DiskCategories',
-                                  namespace=self.namespace)
+    def _to_zone(self, zones):
+        _id = zones['Zone']
+        local_name = zones['ZoneName']
 
-        def _text(element):
-            return element.text
+        return CVMZone(id=_id,
+                       name=local_name,
+                       driver=self,
+                       available_resource_types=[],
+                       available_instance_types=[],
+                       available_disk_categories=[])
 
-        return CVMZone(
-            id=_id,
-            name=local_name,
-            driver=self,
-            available_resource_types=list(map(_text, resource_types)),
-            available_instance_types=list(map(_text, instance_types)),
-            available_disk_categories=list(map(_text, disk_categories)))
+    def _to_instance(self, instances):
+        available_instance_types = {}
+        for i in instances:
+            if available_instance_types.get(
+                    i['Zone']) or available_instance_types.get(
+                        i['Zone']) == []:
+                available_instance_types[i['Zone']].append(i['InstanceType'])
+            else:
+                available_instance_types[i['Zone']] = []
+        return available_instance_types
+
+    def _to_disk(self, disks):
+        available_disk_categories = {}
+        for i in disks:
+            if available_disk_categories.get(
+                    i['Zone']) or available_disk_categories.get(
+                        i['Zone']) == set([]):
+                available_disk_categories[i['Zone']].add(i['DiskType'])
+            else:
+                available_disk_categories[i['Zone']] = set([])
+        return available_disk_categories
 
     def _get_pagination(self, element):
         page_number = int(findtext(element, 'PageNumber'))
@@ -1842,7 +1873,7 @@ class CVMDriver(NodeDriver):
                           size=page_size,
                           current=page_number)
 
-    def _request_client(self, region):
+    def _cvm_client(self, region):
         cred = credential.Credential(self.key, self.secret)
         httpProfile = HttpProfile()
         httpProfile.endpoint = "cvm.tencentcloudapi.com"
@@ -1850,6 +1881,16 @@ class CVMDriver(NodeDriver):
         clientProfile = ClientProfile()
         clientProfile.httpProfile = httpProfile
         client = cvm_client.CvmClient(cred, region, clientProfile)
+        return client
+
+    def _cbs_client(self, region):
+        cred = credential.Credential(self.key, self.secret)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "cbs.tencentcloudapi.com"
+
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = cbs_client.CbsClient(cred, region, clientProfile)
         return client
 
     def _request_multiple_pages(self, path, params, parse_func):
