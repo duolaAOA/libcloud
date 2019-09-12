@@ -815,14 +815,14 @@ class CVMDriver(NodeDriver):
                                 default to ``False``
         :type ex_force_stop: ``bool``
         """
-        params = {
-            'Action': 'RebootInstance',
-            'InstanceId': node.id,
-            'ForceStop': u(ex_force_stop).lower()
-        }
-        resp = self.connection.request(self.path, params=params)
-        return resp.success() and \
-            self._wait_until_state([node], NodeState.RUNNING)
+        params = {'InstanceId': node.id, 'ForceStop': u(ex_force_stop).lower()}
+        req = models.RebootInstancesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.RebootInstances(req)
+        res = json.loads(resp.to_json_string())
+
+        return self._wait_until_state([node], NodeState.RUNNING)
 
     def destroy_node(self, node):
         nodes = self.list_nodes(ex_node_ids=[node.id])
@@ -834,9 +834,14 @@ class CVMDriver(NodeDriver):
             # stop node first
             self.ex_stop_node(node)
             self._wait_until_state(nodes, NodeState.STOPPED)
-        params = {'Action': 'DeleteInstance', 'InstanceId': node.id}
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+
+        params = {'InstanceId': node.id}
+        req = models.TerminateInstancesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.TerminateInstances(req)
+        res = json.loads(resp.to_json_string())
+        return res
 
     def ex_start_node(self, node):
         """
@@ -872,14 +877,15 @@ class CVMDriver(NodeDriver):
         :return: stopping operation result.
         :rtype: ``bool``
         """
-        params = {
-            'Action': 'StopInstance',
-            'InstanceId': node.id,
-            'ForceStop': u(ex_force_stop).lower()
-        }
-        resp = self.connection.request(self.path, params)
-        return resp.success() and \
-            self._wait_until_state([node], NodeState.STOPPED)
+
+        req = models.StopInstancesRequest()
+        params = {'InstanceId': node.id}
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.StopInstances(req)
+        res = json.loads(resp.to_json_string())
+
+        return self._wait_until_state([node], NodeState.STOPPED)
 
     def ex_resize_node(self, node, size):
         """
