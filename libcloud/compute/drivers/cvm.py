@@ -1102,6 +1102,7 @@ class CVMDriver(NodeDriver):
         :return: join operation result.
         :rtype: ``bool``
         """
+
         if group_id is None:
             raise AttributeError('group_id is required')
 
@@ -1110,13 +1111,26 @@ class CVMDriver(NodeDriver):
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
+        if isinstance(node.id, list):
+            InstanceIds = node.id
+        elif isinstance(node.id, str):
+            InstanceIds = [node.id]
+        if isinstance(group_id, list):
+            SecurityGroupIds = group_id
+        elif isinstance(group_id, str):
+            SecurityGroupIds = [group_id]
         params = {
-            'Action': 'JoinSecurityGroup',
-            'InstanceId': node.id,
-            'SecurityGroupId': group_id
+            'InstanceIds': InstanceIds,
+            'SecurityGroupIds': SecurityGroupIds
         }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+        req = models.AssociateSecurityGroupsRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.AssociateSecurityGroups(req)
+        RequestId = json.loads(resp.to_json_string()).get('RequestId', '')
+
+        return RequestId
 
     def ex_leave_security_group(self, node, group_id=None):
         """
@@ -1140,13 +1154,25 @@ class CVMDriver(NodeDriver):
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
+        if isinstance(node.id, list):
+            InstanceIds = node.id
+        elif isinstance(node.id, str):
+            InstanceIds = [node.id]
+        if isinstance(group_id, list):
+            SecurityGroupIds = group_id
+        elif isinstance(group_id, str):
+            SecurityGroupIds = [group_id]
         params = {
-            'Action': 'LeaveSecurityGroup',
-            'InstanceId': node.id,
-            'SecurityGroupId': group_id
+            'InstanceIds': InstanceIds,
+            'SecurityGroupIds': SecurityGroupIds
         }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+        req = models.DisassociateSecurityGroupsRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(region)
+        resp = client.DisassociateSecurityGroups(req)
+        RequestId = json.loads(resp.to_json_string()).get('RequestId', '')
+
+        return RequestId
 
     def ex_list_zones(self, region_id=None):
         """
@@ -2004,4 +2030,4 @@ class CVMDriver(NodeDriver):
         resp = client.AllocateAddresses(req)
         ip_address = json.loads(resp.to_json_string()).get('AddressSet', [])
 
-        return None
+        return ip_address
