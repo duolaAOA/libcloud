@@ -570,11 +570,26 @@ class CVMDriver(NodeDriver):
             else:
                 raise AttributeError('ex_filters should be a dict of '
                                      'node attributes.')
-
+        # zones
         req.from_json_string(json.dumps(params))
         client = self._cvm_client(self.region)
         resp = client.DescribeInstances(req)
-        nodes = json.loads(resp.to_json_string()).get('InstnceSet', [])
+        node_elements = json.loads(resp.to_json_string()).get(
+            'InstanceSet', [])
+        nodes = [self._to_node(el) for el in node_elements]
+
+        # status
+        req = models.DescribeInstancesStatusRequest()
+        params = {}
+        req.from_json_string(json.dumps(params))
+        resp = client.DescribeInstancesStatus(req)
+        node_elements = json.loads(resp.to_json_string()).get(
+            'InstanceStatusSet', [])
+        node_status = self._to_status(node_elements)
+
+        for node in nodes:
+            node.state = node_status[node.id]
+
         return nodes
 
     def list_sizes(self, location=None):
@@ -1507,17 +1522,6 @@ class CVMDriver(NodeDriver):
         resp = self.connection.request(self.path, params=params)
         return findtext(resp.object, 'IpAddress', namespace=self.namespace)
 
-    def _to_nodes(self, object):
-        """
-        Convert response to Node object list
-
-        :param object: parsed response object
-        :return: a list of ``Node``
-        :rtype: ``list``
-        """
-        node_elements = findall(object, 'Instances/Instance', self.namespace)
-        return [self._to_node(el) for el in node_elements]
-
     def _to_node(self, instance):
         """
         Convert an InstanceAttributesType object to ``Node`` object
@@ -1526,35 +1530,14 @@ class CVMDriver(NodeDriver):
         :return: a ``Node`` object
         :rtype: ``Node``
         """
-        _id = findtext(element=instance,
-                       xpath='InstanceId',
-                       namespace=self.namespace)
-        name = findtext(element=instance,
-                        xpath='InstanceName',
-                        namespace=self.namespace)
-        instance_status = findtext(element=instance,
-                                   xpath='Status',
-                                   namespace=self.namespace)
-        state = self.NODE_STATE_MAPPING.get(instance_status, NodeState.UNKNOWN)
-
-        def _get_ips(ip_address_els):
-            return [each.text for each in ip_address_els]
-
-        public_ip_els = findall(element=instance,
-                                xpath='PublicIpAddress/IpAddress',
-                                namespace=self.namespace)
-        public_ips = _get_ips(public_ip_els)
-        private_ip_els = findall(element=instance,
-                                 xpath='InnerIpAddress/IpAddress',
-                                 namespace=self.namespace)
-        private_ips = _get_ips(private_ip_els)
+        _id = instance['InstanceId']
+        name = instance['InstanceName']
+        state = ''
+        public_ips = instance['PublicIpAddresses']
+        private_ips = instance['PrivateIpAddresses']
 
         # Extra properties
-        extra = self._get_extra_dict(instance,
-                                     RESOURCE_EXTRA_ATTRIBUTES_MAP['node'])
-        extra['vpc_attributes'] = self._get_vpc_attributes(instance)
-        extra['eip_address'] = self._get_eip_address(instance)
-        extra['operation_locks'] = self._get_operation_locks(instance)
+        extra = {}
 
         node = Node(id=_id,
                     name=name,
@@ -1779,6 +1762,12 @@ class CVMDriver(NodeDriver):
                         price=None,
                         driver=self,
                         extra=extra)
+
+    def _to_status(self, status):
+        res = {}
+        for statu in status:
+            res[statu['InstanceId']] = statu['InstanceState']
+        return res
 
     def _to_location(self, resp):
         _id = resp['Zone']
