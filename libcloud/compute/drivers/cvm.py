@@ -621,6 +621,21 @@ class CVMDriver(NodeDriver):
         locations = [self._to_location(each) for each in res]
         return locations
 
+    def list_prices(self, image_id):
+        req = models.InquiryPriceRunInstancesRequest()
+        params = {
+            'Placement': {
+                'Zone': self.region + '-1'
+            },
+            'ImageId': image_id
+        }
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(self.region)
+        resp = client.InquiryPriceRunInstances(req)
+        prices = json.loads(resp.to_json_string()).get('Price', {})
+        return prices
+
     def create_node(self,
                     name,
                     size,
@@ -833,10 +848,14 @@ class CVMDriver(NodeDriver):
         :return: starting operation result.
         :rtype: ``bool``
         """
-        params = {'Action': 'StartInstance', 'InstanceId': node.id}
-        resp = self.connection.request(self.path, params)
-        return resp.success() and \
-            self._wait_until_state([node], NodeState.RUNNING)
+        req = models.StartInstancesRequest()
+        params = {'InstanceId': node.id}
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.StartInstances(req)
+        res = json.loads(resp.to_json_string())
+
+        return self._wait_until_state([node], NodeState.RUNNING)
 
     def ex_stop_node(self, node, ex_force_stop=False):
         """
