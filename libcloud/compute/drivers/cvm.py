@@ -888,13 +888,15 @@ class CVMDriver(NodeDriver):
         :param node: The node to resize
         :param size: The new size of the node
         """
-        params = {
-            'Action': 'ModifyInstanceSpec',
-            'InstanceId': node.id,
-            'InstanceType': size
-        }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+
+        req = models.ResetInstancesTypeRequest()
+        params = {'InstanceId': node.id, 'InstanceType': node.name}
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.ResetInstancesType(req)
+        res = json.loads(resp.to_json_string())
+
+        return res
 
     def ex_create_security_group(self, description=None, client_token=None):
         """
