@@ -43,6 +43,8 @@ from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentClo
 from tencentcloud.cvm.v20170312 import cvm_client, models
 from tencentcloud.cbs.v20170312 import cbs_client
 from tencentcloud.cbs.v20170312 import models as cbs_models
+from tencentcloud.vpc.v20170312 import vpc_client
+from tencentcloud.vpc.v20170312 import models as vpc_models
 
 __all__ = [
     'DiskCategory', 'InternetChargeType', 'CVM_API_VERSION', 'CVMDriver',
@@ -642,15 +644,11 @@ class CVMDriver(NodeDriver):
                     image,
                     auth=None,
                     ex_security_group_id=None,
-                    ex_description=None,
                     ex_internet_charge_type=None,
                     ex_internet_max_bandwidth_out=None,
-                    ex_internet_max_bandwidth_in=None,
                     ex_hostname=None,
-                    ex_io_optimized=None,
                     ex_system_disk=None,
                     ex_data_disks=None,
-                    ex_vswitch_id=None,
                     ex_private_ip_address=None,
                     ex_client_token=None,
                     **kwargs):
@@ -675,9 +673,6 @@ class CVMDriver(NodeDriver):
                                        (required)
         :type ex_security_group_id: ``str``
 
-        :keyword ex_description: A description string for this node (optional)
-        :type ex_description: ``str``
-
         :keyword ex_internet_charge_type: The internet charge type (optional)
         :type ex_internet_charge_type: a ``str`` of 'PayByTraffic'
                                        or 'PayByBandwidth'
@@ -691,26 +686,14 @@ class CVMDriver(NodeDriver):
                                              'PayByTraffic' internet charge
                                              type
 
-        :keyword ex_internet_max_bandwidth_in: The max input bandwidth,
-                                               in Mbps (optional)
-        :type ex_internet_max_bandwidth_in: a ``int`` in range [1, 200]
-                                            default to 200 in server side
-
         :keyword ex_hostname: The hostname for the node (optional)
         :type ex_hostname: ``str``
-
-        :keyword ex_io_optimized: Whether the node is IO optimized (optional)
-        :type ex_io_optimized: ``bool``
 
         :keyword ex_system_disk: The system disk for the node (optional)
         :type ex_system_disk: ``dict``
 
         :keyword ex_data_disks: The data disks for the node (optional)
         :type ex_data_disks: a `list` of `dict`
-
-        :keyword ex_vswitch_id: The id of vswitch for a VPC type node
-                                (optional)
-        :type ex_vswitch_id: ``str``
 
         :keyword ex_private_ip_address: The IP address in private network
                                         (optional)
@@ -722,75 +705,58 @@ class CVMDriver(NodeDriver):
         """
 
         params = {
-            'Action': 'CreateInstance',
-            'RegionId': self.region,
             'ImageId': image.id,
             'InstanceType': size.id,
-            'InstanceName': name
+            'InstanceName': name,
         }
 
         if not ex_security_group_id:
             raise AttributeError('ex_security_group_id is mandatory')
-        params['SecurityGroupId'] = ex_security_group_id
-
-        if ex_description:
-            params['Description'] = ex_description
-
-        inet_params = self._get_internet_related_params(
-            ex_internet_charge_type, ex_internet_max_bandwidth_in,
-            ex_internet_max_bandwidth_out)
-        if inet_params:
-            params.update(inet_params)
+        params['SecurityGroupIds'] = [ex_security_group_id]
+        internetAccessible = {
+            'InternetChargeType': ex_internet_charge_type,
+            'InternetMaxBandwidthOut': ex_internet_max_bandwidth_out
+        }
+        params['InternetAccessible'] = internetAccessible
 
         if ex_hostname:
             params['HostName'] = ex_hostname
 
         if auth:
+            loginSettings = {}
             auth = self._get_and_check_auth(auth)
-            if getattr(auth, 'pubkey'):
-                key = self.ex_find_or_import_keypair_by_key_material(
-                    auth.pubkey, kwargs.get('ex_keyname'))
-                params['KeyName'] = key['keyName']
-            else:
-                params['Password'] = auth.password
-
-        if 'ex_keyname' in kwargs:
-            params['KeyPairName'] = kwargs['ex_keyname']
-
-        if ex_io_optimized is not None:
-            optimized = ex_io_optimized
-            if isinstance(optimized, bool):
-                optimized = 'optimized' if optimized else 'none'
-            params['IoOptimized'] = optimized
+            loginSettings['Password'] = auth.password
+        params['LoginSettings'] = loginSettings
 
         if ex_system_disk:
             system_disk = self._get_system_disk(ex_system_disk)
             if system_disk:
-                params.update(system_disk)
+                params['SystemDisk'] = system_disk
 
         if ex_data_disks:
             data_disks = self._get_data_disks(ex_data_disks)
             if data_disks:
-                params.update(data_disks)
-
-        if ex_vswitch_id:
-            params['VSwitchId'] = ex_vswitch_id
+                params['DataDisk'] = data_disks
 
         if ex_private_ip_address:
             if not ex_vswitch_id:
                 raise AttributeError('must provide ex_private_ip_address  '
                                      'and ex_vswitch_id at the same time')
             else:
-                params['PrivateIpAddress'] = ex_private_ip_address
+                virtualPrivateCloud = {
+                    'PrivateIpAddresses': 'ex_private_ip_address'
+                }
+                params['VirtualPrivateCloud'] = virtualPrivateCloud
 
         if ex_client_token:
             params['ClientToken'] = ex_client_token
 
-        resp = self.connection.request(self.path, params=params)
-        node_id = findtext(resp.object,
-                           xpath='InstanceId',
-                           namespace=self.namespace)
-        nodes = self.list_nodes(ex_node_ids=[node_id])
+        req = models.RunInstancesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.RunInstances(req)
+        node_id = json.loads(resp.to_json_string()).get('InstanceIdSet', [])
+        nodes = self.list_nodes(ex_node_ids=node_id)
         if len(nodes) != 1:
             raise LibcloudError('could not find the new created node '
                                 'with id %s. ' % node_id,
@@ -800,8 +766,8 @@ class CVMDriver(NodeDriver):
         self.ex_start_node(node)
         self._wait_until_state(nodes, NodeState.RUNNING)
 
-        if 'ex_allocate_public_ip_address' in kwargs:
-            self.ex_allocate_public_ip(node)
+        # if 'ex_allocate_public_ip_address' in kwargs:
+        #     self.ex_allocate_public_ip(node)
         return node
 
     def reboot_node(self, node, ex_force_stop=False):
@@ -1604,75 +1570,49 @@ class CVMDriver(NodeDriver):
 
         return extra
 
-    def _get_internet_related_params(self, ex_internet_charge_type,
-                                     ex_internet_max_bandwidth_in,
-                                     ex_internet_max_bandwidth_out):
-        params = {}
-        if ex_internet_charge_type:
-            params['InternetChargeType'] = ex_internet_charge_type
-            if ex_internet_charge_type.lower() == 'paybytraffic':
-                if ex_internet_max_bandwidth_out:
-                    params['InternetMaxBandwidthOut'] = \
-                        ex_internet_max_bandwidth_out
-                else:
-                    raise AttributeError('ex_internet_max_bandwidth_out is '
-                                         'mandatory for PayByTraffic internet'
-                                         ' charge type.')
-            elif ex_internet_max_bandwidth_out:
-                params['InternetMaxBandwidthOut'] = \
-                    ex_internet_max_bandwidth_out
-
-        if ex_internet_max_bandwidth_in:
-            params['InternetMaxBandwidthIn'] = \
-                ex_internet_max_bandwidth_in
-        return params
-
     def _get_system_disk(self, ex_system_disk):
+        params = {}
         if not isinstance(ex_system_disk, dict):
             raise AttributeError('ex_system_disk is not a dict')
-        sys_disk_dict = ex_system_disk
-        key_base = 'SystemDisk.'
-        # TODO(samsong8610): Use a type instead of dict
-        mappings = {
-            'category': 'Category',
-            'disk_name': 'DiskName',
-            'description': 'Description'
-        }
+        if ex_system_disk.get('DiskType'):
+            params['DiskType'] = ex_system_disk.get('DiskType')
+        if ex_system_disk.get('DiskId'):
+            params['DiskId'] = ex_system_disk.get('DiskId')
+        if ex_system_disk.get('DiskSize'):
+            params['DiskSize'] = ex_system_disk.get('DiskSize')
+        return params
+
+    def _make_data_disks(data_disks):
         params = {}
-        for attr in mappings.keys():
-            if attr in sys_disk_dict:
-                params[key_base + mappings[attr]] = sys_disk_dict[attr]
+        if data_disks.get('DiskSize') and isinstance(
+                data_disks.get('DiskSize'), int):
+            params['DiskSize'] = data_disks.get('DiskSize')
+        if data_disks.get('DiskType') and data_disks.get(
+                'DiskType').upper() in TYPE_LIST:
+            params['DiskType'] = data_disks.get('DiskType').upper()
+        if data_disks.get('DiskId') and instance(data_disks.get('DiskId'),
+                                                 str):
+            params['DiskId'] = data_disks.get('DiskId')
+        if data_disks.get('DeleteWithInstance') and instance(
+                data_disks.get('DeleteWithInstance'), bool):
+            params['DeleteWithInstance'] = data_disks.get('DeleteWithInstance')
+        if data_disks.get('SnapshotId') and instance(
+                data_disks.get('SnapshotId'), str):
+            params['SnapshotId'] = data_disks.get('SnapshotId')
         return params
 
     def _get_data_disks(self, ex_data_disks):
+        TYPE_LIST = [
+            'LOCAL_BASIC', 'LOCAL_SSD', 'CLOUD_BASIC', 'CLOUD_PREMIUM',
+            'CLOUD_SSD：SSD'
+        ]
+
         if isinstance(ex_data_disks, dict):
-            data_disks = [ex_data_disks]
+            return [_make_data_disks(ex_data_disks)]
         elif isinstance(ex_data_disks, list):
-            data_disks = ex_data_disks
+            return [_make_data_disks(edd) for edd in ex_data_disks]
         else:
             raise AttributeError('ex_data_disks should be a list of dict')
-        # TODO(samsong8610): Use a type instead of dict
-        mappings = {
-            'size': 'Size',
-            'category': 'Category',
-            'snapshot_id': 'SnapshotId',
-            'disk_name': 'DiskName',
-            'description': 'Description',
-            'device': 'Device',
-            'delete_with_instance': 'DeleteWithInstance'
-        }
-        params = {}
-        for idx, disk in enumerate(data_disks):
-            key_base = 'DataDisk.{0}.'.format(idx + 1)
-            for attr in mappings.keys():
-                if attr in disk:
-                    if attr == 'delete_with_instance':
-                        # Convert bool value to str
-                        value = str(disk[attr]).lower()
-                    else:
-                        value = disk[attr]
-                    params[key_base + mappings[attr]] = value
-        return params
 
     def _get_vpc_attributes(self, instance):
         vpcs = findall(instance,
@@ -1909,6 +1849,16 @@ class CVMDriver(NodeDriver):
         client = cbs_client.CbsClient(cred, region, clientProfile)
         return client
 
+    def _vpc_client(self, region):
+        cred = credential.Credential(self.key, self.secret)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "vpc.tencentcloudapi.com"
+
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = vpc_client.VpcClient(cred, region, clientProfile)
+        return client
+
     def _request_multiple_pages(self, path, params, parse_func):
         """
         Request all resources by multiple pages.
@@ -2047,11 +1997,11 @@ class CVMDriver(NodeDriver):
         return key_pair
 
     def ex_allocate_public_ip(self, node):
-        params = {
-            'Action': 'AllocatePublicIpAddress',
-            'InstanceId': node.id,
-            'RegionId': self.region
-        }
-        res = self.connection.request(self.path, params=params)
+        params = {}
+        req = vpc_models.AllocateAddressesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._vpc_client(self.region)
+        resp = client.AllocateAddresses(req)
+        ip_address = json.loads(resp.to_json_string()).get('AddressSet', [])
 
-        return res.status == 200
+        return None
