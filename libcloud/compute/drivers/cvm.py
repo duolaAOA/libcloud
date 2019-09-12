@@ -1970,7 +1970,7 @@ class CVMDriver(NodeDriver):
         key_pair = self._to_key_pair(elem=key_elements)
         return key_pair
 
-    def import_key_pair_from_string(self, name, project_id=None, publickey):
+    def import_key_pair_from_string(self, name, publickey, project_id=None):
         params = {
             'KeyName': name,
             'ProjectId': project_id,
