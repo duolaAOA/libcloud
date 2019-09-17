@@ -41,6 +41,11 @@ from tencentcloud.common.profile.client_profile import ClientProfile
 from tencentcloud.common.profile.http_profile import HttpProfile
 from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
 from tencentcloud.cvm.v20170312 import cvm_client, models
+from tencentcloud.cbs.v20170312 import cbs_client
+from tencentcloud.cbs.v20170312 import models as cbs_models
+from tencentcloud.vpc.v20170312 import vpc_client
+from tencentcloud.vpc.v20170312 import models as vpc_models
+
 __all__ = [
     'DiskCategory', 'InternetChargeType', 'CVM_API_VERSION', 'CVMDriver',
     'CVMSecurityGroup', 'CVMZone'
@@ -567,11 +572,26 @@ class CVMDriver(NodeDriver):
             else:
                 raise AttributeError('ex_filters should be a dict of '
                                      'node attributes.')
-
+        # zones
         req.from_json_string(json.dumps(params))
-        client = self._request_client(self.region)
+        client = self._cvm_client(self.region)
         resp = client.DescribeInstances(req)
-        nodes = json.loads(resp.to_json_string()).get('InstnceSet', [])
+        node_elements = json.loads(resp.to_json_string()).get(
+            'InstanceSet', [])
+        nodes = [self._to_node(el) for el in node_elements]
+
+        # status
+        req = models.DescribeInstancesStatusRequest()
+        params = {}
+        req.from_json_string(json.dumps(params))
+        resp = client.DescribeInstancesStatus(req)
+        node_elements = json.loads(resp.to_json_string()).get(
+            'InstanceStatusSet', [])
+        node_status = self._to_status(node_elements)
+
+        for node in nodes:
+            node.state = node_status[node.id]
+
         return nodes
 
     def list_sizes(self, location=None):
@@ -585,13 +605,11 @@ class CVMDriver(NodeDriver):
         params = {}
         req.from_json_string(json.dumps(params))
 
-        client = self._request_client(region)
+        client = self._cvm_client(region)
         resp = client.DescribeInstanceTypeConfigs(req)
         res = json.loads(resp.to_json_string()).get('InstanceTypeConfigSet',
                                                     [])
-        sizes = []
-        for r in res:
-            sizes.append(r.get('InstanceType'))
+        sizes = [self._to_size(each) for each in res]
         return sizes
 
     def list_locations(self):
@@ -599,14 +617,26 @@ class CVMDriver(NodeDriver):
         params = {}
         req.from_json_string(json.dumps(params))
 
-        client = self._request_client(self.region)
+        client = self._cvm_client(self.region)
         resp = client.DescribeZones(req)
         res = json.loads(resp.to_json_string()).get('ZoneSet', [])
-        locations = []
-
-        for r in res:
-            locations.append(r.get('Zone'))
+        locations = [self._to_location(each) for each in res]
         return locations
+
+    def list_prices(self, image_id):
+        req = models.InquiryPriceRunInstancesRequest()
+        params = {
+            'Placement': {
+                'Zone': self.region + '-1'
+            },
+            'ImageId': image_id
+        }
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(self.region)
+        resp = client.InquiryPriceRunInstances(req)
+        prices = json.loads(resp.to_json_string()).get('Price', {})
+        return prices
 
     def create_node(self,
                     name,
@@ -614,15 +644,11 @@ class CVMDriver(NodeDriver):
                     image,
                     auth=None,
                     ex_security_group_id=None,
-                    ex_description=None,
                     ex_internet_charge_type=None,
                     ex_internet_max_bandwidth_out=None,
-                    ex_internet_max_bandwidth_in=None,
                     ex_hostname=None,
-                    ex_io_optimized=None,
                     ex_system_disk=None,
                     ex_data_disks=None,
-                    ex_vswitch_id=None,
                     ex_private_ip_address=None,
                     ex_client_token=None,
                     **kwargs):
@@ -647,9 +673,6 @@ class CVMDriver(NodeDriver):
                                        (required)
         :type ex_security_group_id: ``str``
 
-        :keyword ex_description: A description string for this node (optional)
-        :type ex_description: ``str``
-
         :keyword ex_internet_charge_type: The internet charge type (optional)
         :type ex_internet_charge_type: a ``str`` of 'PayByTraffic'
                                        or 'PayByBandwidth'
@@ -663,26 +686,14 @@ class CVMDriver(NodeDriver):
                                              'PayByTraffic' internet charge
                                              type
 
-        :keyword ex_internet_max_bandwidth_in: The max input bandwidth,
-                                               in Mbps (optional)
-        :type ex_internet_max_bandwidth_in: a ``int`` in range [1, 200]
-                                            default to 200 in server side
-
         :keyword ex_hostname: The hostname for the node (optional)
         :type ex_hostname: ``str``
-
-        :keyword ex_io_optimized: Whether the node is IO optimized (optional)
-        :type ex_io_optimized: ``bool``
 
         :keyword ex_system_disk: The system disk for the node (optional)
         :type ex_system_disk: ``dict``
 
         :keyword ex_data_disks: The data disks for the node (optional)
         :type ex_data_disks: a `list` of `dict`
-
-        :keyword ex_vswitch_id: The id of vswitch for a VPC type node
-                                (optional)
-        :type ex_vswitch_id: ``str``
 
         :keyword ex_private_ip_address: The IP address in private network
                                         (optional)
@@ -694,75 +705,58 @@ class CVMDriver(NodeDriver):
         """
 
         params = {
-            'Action': 'CreateInstance',
-            'RegionId': self.region,
             'ImageId': image.id,
             'InstanceType': size.id,
-            'InstanceName': name
+            'InstanceName': name,
         }
 
         if not ex_security_group_id:
             raise AttributeError('ex_security_group_id is mandatory')
-        params['SecurityGroupId'] = ex_security_group_id
-
-        if ex_description:
-            params['Description'] = ex_description
-
-        inet_params = self._get_internet_related_params(
-            ex_internet_charge_type, ex_internet_max_bandwidth_in,
-            ex_internet_max_bandwidth_out)
-        if inet_params:
-            params.update(inet_params)
+        params['SecurityGroupIds'] = [ex_security_group_id]
+        internetAccessible = {
+            'InternetChargeType': ex_internet_charge_type,
+            'InternetMaxBandwidthOut': ex_internet_max_bandwidth_out
+        }
+        params['InternetAccessible'] = internetAccessible
 
         if ex_hostname:
             params['HostName'] = ex_hostname
 
         if auth:
+            loginSettings = {}
             auth = self._get_and_check_auth(auth)
-            if getattr(auth, 'pubkey'):
-                key = self.ex_find_or_import_keypair_by_key_material(
-                    auth.pubkey, kwargs.get('ex_keyname'))
-                params['KeyName'] = key['keyName']
-            else:
-                params['Password'] = auth.password
-
-        if 'ex_keyname' in kwargs:
-            params['KeyPairName'] = kwargs['ex_keyname']
-
-        if ex_io_optimized is not None:
-            optimized = ex_io_optimized
-            if isinstance(optimized, bool):
-                optimized = 'optimized' if optimized else 'none'
-            params['IoOptimized'] = optimized
+            loginSettings['Password'] = auth.password
+        params['LoginSettings'] = loginSettings
 
         if ex_system_disk:
             system_disk = self._get_system_disk(ex_system_disk)
             if system_disk:
-                params.update(system_disk)
+                params['SystemDisk'] = system_disk
 
         if ex_data_disks:
             data_disks = self._get_data_disks(ex_data_disks)
             if data_disks:
-                params.update(data_disks)
-
-        if ex_vswitch_id:
-            params['VSwitchId'] = ex_vswitch_id
+                params['DataDisk'] = data_disks
 
         if ex_private_ip_address:
             if not ex_vswitch_id:
                 raise AttributeError('must provide ex_private_ip_address  '
                                      'and ex_vswitch_id at the same time')
             else:
-                params['PrivateIpAddress'] = ex_private_ip_address
+                virtualPrivateCloud = {
+                    'PrivateIpAddresses': 'ex_private_ip_address'
+                }
+                params['VirtualPrivateCloud'] = virtualPrivateCloud
 
         if ex_client_token:
             params['ClientToken'] = ex_client_token
 
-        resp = self.connection.request(self.path, params=params)
-        node_id = findtext(resp.object,
-                           xpath='InstanceId',
-                           namespace=self.namespace)
-        nodes = self.list_nodes(ex_node_ids=[node_id])
+        req = models.RunInstancesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.RunInstances(req)
+        node_id = json.loads(resp.to_json_string()).get('InstanceIdSet', [])
+        nodes = self.list_nodes(ex_node_ids=node_id)
         if len(nodes) != 1:
             raise LibcloudError('could not find the new created node '
                                 'with id %s. ' % node_id,
@@ -772,8 +766,8 @@ class CVMDriver(NodeDriver):
         self.ex_start_node(node)
         self._wait_until_state(nodes, NodeState.RUNNING)
 
-        if 'ex_allocate_public_ip_address' in kwargs:
-            self.ex_allocate_public_ip(node)
+        # if 'ex_allocate_public_ip_address' in kwargs:
+        #     self.ex_allocate_public_ip(node)
         return node
 
     def reboot_node(self, node, ex_force_stop=False):
@@ -787,14 +781,14 @@ class CVMDriver(NodeDriver):
                                 default to ``False``
         :type ex_force_stop: ``bool``
         """
-        params = {
-            'Action': 'RebootInstance',
-            'InstanceId': node.id,
-            'ForceStop': u(ex_force_stop).lower()
-        }
-        resp = self.connection.request(self.path, params=params)
-        return resp.success() and \
-            self._wait_until_state([node], NodeState.RUNNING)
+        params = {'InstanceId': node.id, 'ForceStop': u(ex_force_stop).lower()}
+        req = models.RebootInstancesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.RebootInstances(req)
+        res = json.loads(resp.to_json_string())
+
+        return self._wait_until_state([node], NodeState.RUNNING)
 
     def destroy_node(self, node):
         nodes = self.list_nodes(ex_node_ids=[node.id])
@@ -806,9 +800,14 @@ class CVMDriver(NodeDriver):
             # stop node first
             self.ex_stop_node(node)
             self._wait_until_state(nodes, NodeState.STOPPED)
-        params = {'Action': 'DeleteInstance', 'InstanceId': node.id}
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+
+        params = {'InstanceId': node.id}
+        req = models.TerminateInstancesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.TerminateInstances(req)
+        res = json.loads(resp.to_json_string())
+        return res
 
     def ex_start_node(self, node):
         """
@@ -820,10 +819,14 @@ class CVMDriver(NodeDriver):
         :return: starting operation result.
         :rtype: ``bool``
         """
-        params = {'Action': 'StartInstance', 'InstanceId': node.id}
-        resp = self.connection.request(self.path, params)
-        return resp.success() and \
-            self._wait_until_state([node], NodeState.RUNNING)
+        req = models.StartInstancesRequest()
+        params = {'InstanceId': node.id}
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.StartInstances(req)
+        res = json.loads(resp.to_json_string())
+
+        return self._wait_until_state([node], NodeState.RUNNING)
 
     def ex_stop_node(self, node, ex_force_stop=False):
         """
@@ -840,14 +843,15 @@ class CVMDriver(NodeDriver):
         :return: stopping operation result.
         :rtype: ``bool``
         """
-        params = {
-            'Action': 'StopInstance',
-            'InstanceId': node.id,
-            'ForceStop': u(ex_force_stop).lower()
-        }
-        resp = self.connection.request(self.path, params)
-        return resp.success() and \
-            self._wait_until_state([node], NodeState.STOPPED)
+
+        req = models.StopInstancesRequest()
+        params = {'InstanceId': node.id}
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.StopInstances(req)
+        res = json.loads(resp.to_json_string())
+
+        return self._wait_until_state([node], NodeState.STOPPED)
 
     def ex_resize_node(self, node, size):
         """
@@ -856,15 +860,17 @@ class CVMDriver(NodeDriver):
         :param node: The node to resize
         :param size: The new size of the node
         """
-        params = {
-            'Action': 'ModifyInstanceSpec',
-            'InstanceId': node.id,
-            'InstanceType': size
-        }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
 
-    def ex_create_security_group(self, description=None, client_token=None):
+        req = models.ResetInstancesTypeRequest()
+        params = {'InstanceId': node.id, 'InstanceType': node.name}
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(self.region)
+        resp = client.ResetInstancesType(req)
+        res = json.loads(resp.to_json_string())
+
+        return res
+
+    def ex_create_security_group(self, description=None, name=None):
         """
         Create a new security group.
 
@@ -875,16 +881,22 @@ class CVMDriver(NodeDriver):
                                   each request.
         :type client_token: ``str``
         """
-        params = {'Action': 'CreateSecurityGroup', 'RegionId': self.region}
-
+        params = {}
         if description:
-            params['Description'] = description
-        if client_token:
-            params['ClientToken'] = client_token
-        resp = self.connection.request(self.path, params)
-        return findtext(resp.object,
-                        'SecurityGroupId',
-                        namespace=self.namespace)
+            params['GroupDescription'] = description
+        else:
+            AttributeError('GroupDescription is required')
+        if name:
+            params['GroupName'] = name
+        else:
+            AttributeError('GroupName is required')
+
+        req = vpc_models.CreateSecurityGroupRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._vpc_client(self.region)
+        resp = client.CreateSecurityGroup(req)
+        res = json.loads(resp.to_json_string()).get('SecurityGroup', {})
+        return res
 
     def ex_delete_security_group_by_id(self, group_id=None):
         """
@@ -893,13 +905,19 @@ class CVMDriver(NodeDriver):
         :keyword group_id: security group id
         :type group_id: ``str``
         """
-        params = {
-            'Action': 'DeleteSecurityGroup',
-            'RegionId': self.region,
-            'SecurityGroupId': group_id
-        }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+        params = {}
+        if group_id:
+            params['SecurityGroupId'] = group_id
+        else:
+            AttributeError('SecurityGroupId is required')
+
+        req = vpc_models.DeleteSecurityGroupRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._vpc_client(self.region)
+        resp = client.DeleteSecurityGroup(req)
+        RequestID = json.loads(resp.to_json_string()).get('RequestID', {})
+
+        return RequestID
 
     def ex_modify_security_group_by_id(self,
                                        group_id=None,
@@ -1096,6 +1114,7 @@ class CVMDriver(NodeDriver):
         :return: join operation result.
         :rtype: ``bool``
         """
+
         if group_id is None:
             raise AttributeError('group_id is required')
 
@@ -1104,13 +1123,26 @@ class CVMDriver(NodeDriver):
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
+        if isinstance(node.id, list):
+            InstanceIds = node.id
+        elif isinstance(node.id, str):
+            InstanceIds = [node.id]
+        if isinstance(group_id, list):
+            SecurityGroupIds = group_id
+        elif isinstance(group_id, str):
+            SecurityGroupIds = [group_id]
         params = {
-            'Action': 'JoinSecurityGroup',
-            'InstanceId': node.id,
-            'SecurityGroupId': group_id
+            'InstanceIds': InstanceIds,
+            'SecurityGroupIds': SecurityGroupIds
         }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+        req = models.AssociateSecurityGroupsRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.AssociateSecurityGroups(req)
+        RequestId = json.loads(resp.to_json_string()).get('RequestId', '')
+
+        return RequestId
 
     def ex_leave_security_group(self, node, group_id=None):
         """
@@ -1134,13 +1166,25 @@ class CVMDriver(NodeDriver):
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
+        if isinstance(node.id, list):
+            InstanceIds = node.id
+        elif isinstance(node.id, str):
+            InstanceIds = [node.id]
+        if isinstance(group_id, list):
+            SecurityGroupIds = group_id
+        elif isinstance(group_id, str):
+            SecurityGroupIds = [group_id]
         params = {
-            'Action': 'LeaveSecurityGroup',
-            'InstanceId': node.id,
-            'SecurityGroupId': group_id
+            'InstanceIds': InstanceIds,
+            'SecurityGroupIds': SecurityGroupIds
         }
-        resp = self.connection.request(self.path, params)
-        return resp.success()
+        req = models.DisassociateSecurityGroupsRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._cvm_client(region)
+        resp = client.DisassociateSecurityGroups(req)
+        RequestId = json.loads(resp.to_json_string()).get('RequestId', '')
+
+        return RequestId
 
     def ex_list_zones(self, region_id=None):
         """
@@ -1154,13 +1198,42 @@ class CVMDriver(NodeDriver):
         """
         region = region_id if region_id else self.region
 
+        # get zone info
         req = models.DescribeZonesRequest()
-        params = '{}'
+        params = {}
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.DescribeZones(req)
+        zone_elements = json.loads(resp.to_json_string()).get('ZoneSet', [])
+
+        zones = [self._to_zone(el) for el in zone_elements]
+
+        # get instance info
+        req = models.DescribeInstanceTypeConfigsRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.DescribeInstanceTypeConfigs(req)
+        instances = json.loads(resp.to_json_string()).get(
+            'InstanceTypeConfigSet', [])
+
+        instances_elements = self._to_instance(instances)
+
+        # get disk info
+        req = cbs_models.DescribeDiskConfigQuotaRequest()
+        params = '{"InquiryType":"INQUIRY_CVM_CONFIG"}'
         req.from_json_string(params)
 
-        client = self._request_client(region)
-        resp = client.DescribeZones(req)
-        zones = json.loads(resp.to_json_string()).get('ZoneSet', [])
+        client = self._cbs_client(region)
+        resp = client.DescribeDiskConfigQuota(req)
+        disks = json.loads(resp.to_json_string()).get('DiskConfigSet', [])
+        disks_elements = self._to_disk(disks)
+
+        for zone in zones:
+            zone.available_instance_types = instances_elements.get(zone.id, [])
+            zone.available_disk_categories = list(
+                disks_elements.get(zone.id, set([])))
         return zones
 
     ##
@@ -1452,14 +1525,15 @@ class CVMDriver(NodeDriver):
         params = {}
         req.from_json_string(json.dumps(params))
 
-        client = self._request_client(region)
+        client = self._cvm_client(region)
         resp = client.DescribeImages(req)
         res = json.loads(resp.to_json_string()).get('ImageSet', [])
 
-        def _parse_response(resp_body):
-            raise NotImplementedError()
+        def _parse_response(res):
+            images = [self._to_image(each) for each in res]
+            return images
 
-        return res
+        return _parse_response(res)
 
     def create_public_ip(self, instance_id):
         """
@@ -1479,17 +1553,6 @@ class CVMDriver(NodeDriver):
         resp = self.connection.request(self.path, params=params)
         return findtext(resp.object, 'IpAddress', namespace=self.namespace)
 
-    def _to_nodes(self, object):
-        """
-        Convert response to Node object list
-
-        :param object: parsed response object
-        :return: a list of ``Node``
-        :rtype: ``list``
-        """
-        node_elements = findall(object, 'Instances/Instance', self.namespace)
-        return [self._to_node(el) for el in node_elements]
-
     def _to_node(self, instance):
         """
         Convert an InstanceAttributesType object to ``Node`` object
@@ -1498,35 +1561,14 @@ class CVMDriver(NodeDriver):
         :return: a ``Node`` object
         :rtype: ``Node``
         """
-        _id = findtext(element=instance,
-                       xpath='InstanceId',
-                       namespace=self.namespace)
-        name = findtext(element=instance,
-                        xpath='InstanceName',
-                        namespace=self.namespace)
-        instance_status = findtext(element=instance,
-                                   xpath='Status',
-                                   namespace=self.namespace)
-        state = self.NODE_STATE_MAPPING.get(instance_status, NodeState.UNKNOWN)
-
-        def _get_ips(ip_address_els):
-            return [each.text for each in ip_address_els]
-
-        public_ip_els = findall(element=instance,
-                                xpath='PublicIpAddress/IpAddress',
-                                namespace=self.namespace)
-        public_ips = _get_ips(public_ip_els)
-        private_ip_els = findall(element=instance,
-                                 xpath='InnerIpAddress/IpAddress',
-                                 namespace=self.namespace)
-        private_ips = _get_ips(private_ip_els)
+        _id = instance['InstanceId']
+        name = instance['InstanceName']
+        state = ''
+        public_ips = instance['PublicIpAddresses']
+        private_ips = instance['PrivateIpAddresses']
 
         # Extra properties
-        extra = self._get_extra_dict(instance,
-                                     RESOURCE_EXTRA_ATTRIBUTES_MAP['node'])
-        extra['vpc_attributes'] = self._get_vpc_attributes(instance)
-        extra['eip_address'] = self._get_eip_address(instance)
-        extra['operation_locks'] = self._get_operation_locks(instance)
+        extra = {}
 
         node = Node(id=_id,
                     name=name,
@@ -1566,75 +1608,49 @@ class CVMDriver(NodeDriver):
 
         return extra
 
-    def _get_internet_related_params(self, ex_internet_charge_type,
-                                     ex_internet_max_bandwidth_in,
-                                     ex_internet_max_bandwidth_out):
-        params = {}
-        if ex_internet_charge_type:
-            params['InternetChargeType'] = ex_internet_charge_type
-            if ex_internet_charge_type.lower() == 'paybytraffic':
-                if ex_internet_max_bandwidth_out:
-                    params['InternetMaxBandwidthOut'] = \
-                        ex_internet_max_bandwidth_out
-                else:
-                    raise AttributeError('ex_internet_max_bandwidth_out is '
-                                         'mandatory for PayByTraffic internet'
-                                         ' charge type.')
-            elif ex_internet_max_bandwidth_out:
-                params['InternetMaxBandwidthOut'] = \
-                    ex_internet_max_bandwidth_out
-
-        if ex_internet_max_bandwidth_in:
-            params['InternetMaxBandwidthIn'] = \
-                ex_internet_max_bandwidth_in
-        return params
-
     def _get_system_disk(self, ex_system_disk):
+        params = {}
         if not isinstance(ex_system_disk, dict):
             raise AttributeError('ex_system_disk is not a dict')
-        sys_disk_dict = ex_system_disk
-        key_base = 'SystemDisk.'
-        # TODO(samsong8610): Use a type instead of dict
-        mappings = {
-            'category': 'Category',
-            'disk_name': 'DiskName',
-            'description': 'Description'
-        }
+        if ex_system_disk.get('DiskType'):
+            params['DiskType'] = ex_system_disk.get('DiskType')
+        if ex_system_disk.get('DiskId'):
+            params['DiskId'] = ex_system_disk.get('DiskId')
+        if ex_system_disk.get('DiskSize'):
+            params['DiskSize'] = ex_system_disk.get('DiskSize')
+        return params
+
+    def _make_data_disks(data_disks):
         params = {}
-        for attr in mappings.keys():
-            if attr in sys_disk_dict:
-                params[key_base + mappings[attr]] = sys_disk_dict[attr]
+        if data_disks.get('DiskSize') and isinstance(
+                data_disks.get('DiskSize'), int):
+            params['DiskSize'] = data_disks.get('DiskSize')
+        if data_disks.get('DiskType') and data_disks.get(
+                'DiskType').upper() in TYPE_LIST:
+            params['DiskType'] = data_disks.get('DiskType').upper()
+        if data_disks.get('DiskId') and instance(data_disks.get('DiskId'),
+                                                 str):
+            params['DiskId'] = data_disks.get('DiskId')
+        if data_disks.get('DeleteWithInstance') and instance(
+                data_disks.get('DeleteWithInstance'), bool):
+            params['DeleteWithInstance'] = data_disks.get('DeleteWithInstance')
+        if data_disks.get('SnapshotId') and instance(
+                data_disks.get('SnapshotId'), str):
+            params['SnapshotId'] = data_disks.get('SnapshotId')
         return params
 
     def _get_data_disks(self, ex_data_disks):
+        TYPE_LIST = [
+            'LOCAL_BASIC', 'LOCAL_SSD', 'CLOUD_BASIC', 'CLOUD_PREMIUM',
+            'CLOUD_SSD：SSD'
+        ]
+
         if isinstance(ex_data_disks, dict):
-            data_disks = [ex_data_disks]
+            return [_make_data_disks(ex_data_disks)]
         elif isinstance(ex_data_disks, list):
-            data_disks = ex_data_disks
+            return [_make_data_disks(edd) for edd in ex_data_disks]
         else:
             raise AttributeError('ex_data_disks should be a list of dict')
-        # TODO(samsong8610): Use a type instead of dict
-        mappings = {
-            'size': 'Size',
-            'category': 'Category',
-            'snapshot_id': 'SnapshotId',
-            'disk_name': 'DiskName',
-            'description': 'Description',
-            'device': 'Device',
-            'delete_with_instance': 'DeleteWithInstance'
-        }
-        params = {}
-        for idx, disk in enumerate(data_disks):
-            key_base = 'DataDisk.{0}.'.format(idx + 1)
-            for attr in mappings.keys():
-                if attr in disk:
-                    if attr == 'delete_with_instance':
-                        # Convert bool value to str
-                        value = str(disk[attr]).lower()
-                    else:
-                        value = disk[attr]
-                    params[key_base + mappings[attr]] = value
-        return params
 
     def _get_vpc_attributes(self, instance):
         vpcs = findall(instance,
@@ -1737,15 +1753,12 @@ class CVMDriver(NodeDriver):
                               created=created,
                               state=state)
 
-    def _to_size(self, element):
-        _id = findtext(element, 'InstanceTypeId', namespace=self.namespace)
-        ram = float(findtext(element, 'MemorySize', namespace=self.namespace))
+    def _to_size(self, resp):
+        _id = resp['InstanceType']
+        ram = float(0)
         extra = {}
-        extra['cpu_core_count'] = int(
-            findtext(element, 'CpuCoreCount', namespace=self.namespace))
-        extra['instance_type_family'] = findtext(element,
-                                                 'InstanceTypeFamily',
-                                                 namespace=self.namespace)
+        extra['cpu_core_count'] = int(resp['CPU'])
+        extra['instance_type_family'] = resp['InstanceFamily']
         return NodeSize(id=_id,
                         name=_id,
                         ram=ram,
@@ -1755,18 +1768,21 @@ class CVMDriver(NodeDriver):
                         driver=self,
                         extra=extra)
 
-    def _to_location(self, element):
-        _id = findtext(element, 'RegionId', namespace=self.namespace)
-        localname = findtext(element, 'LocalName', namespace=self.namespace)
+    def _to_status(self, status):
+        res = {}
+        for statu in status:
+            res[statu['InstanceId']] = statu['InstanceState']
+        return res
+
+    def _to_location(self, resp):
+        _id = resp['Zone']
+        localname = resp['ZoneName']
         return NodeLocation(id=_id, name=localname, country=None, driver=self)
 
-    def _to_image(self, element):
-        _id = findtext(element, 'ImageId', namespace=self.namespace)
-        name = findtext(element, 'ImageName', namespace=self.namespace)
-        extra = self._get_extra_dict(element,
-                                     RESOURCE_EXTRA_ATTRIBUTES_MAP['image'])
-        extra['disk_device_mappings'] = self._get_disk_device_mappings(
-            element.find('DiskDeviceMappings'))
+    def _to_image(self, resp):
+        _id = resp['ImageId']
+        name = resp['ImageName']
+        extra = {'arch': resp['Architecture'], 'family': resp['Platform']}
         return NodeImage(id=_id, name=name, driver=self, extra=extra)
 
     def _get_disk_device_mappings(self, element):
@@ -1810,29 +1826,38 @@ class CVMDriver(NodeDriver):
                                          policy=policy,
                                          nic_type=nic_type)
 
-    def _to_zone(self, element):
-        _id = findtext(element, 'ZoneId', namespace=self.namespace)
-        local_name = findtext(element, 'LocalName', namespace=self.namespace)
-        resource_types = findall(element,
-                                 'AvailableResourceCreation/ResourceTypes',
-                                 namespace=self.namespace)
-        instance_types = findall(element,
-                                 'AvailableInstanceTypes/InstanceTypes',
-                                 namespace=self.namespace)
-        disk_categories = findall(element,
-                                  'AvailableDiskCategories/DiskCategories',
-                                  namespace=self.namespace)
+    def _to_zone(self, zones):
+        _id = zones['Zone']
+        local_name = zones['ZoneName']
 
-        def _text(element):
-            return element.text
+        return CVMZone(id=_id,
+                       name=local_name,
+                       driver=self,
+                       available_resource_types=[],
+                       available_instance_types=[],
+                       available_disk_categories=[])
 
-        return CVMZone(
-            id=_id,
-            name=local_name,
-            driver=self,
-            available_resource_types=list(map(_text, resource_types)),
-            available_instance_types=list(map(_text, instance_types)),
-            available_disk_categories=list(map(_text, disk_categories)))
+    def _to_instance(self, instances):
+        available_instance_types = {}
+        for i in instances:
+            if available_instance_types.get(
+                    i['Zone']) or available_instance_types.get(
+                        i['Zone']) == []:
+                available_instance_types[i['Zone']].append(i['InstanceType'])
+            else:
+                available_instance_types[i['Zone']] = []
+        return available_instance_types
+
+    def _to_disk(self, disks):
+        available_disk_categories = {}
+        for i in disks:
+            if available_disk_categories.get(
+                    i['Zone']) or available_disk_categories.get(
+                        i['Zone']) == set([]):
+                available_disk_categories[i['Zone']].add(i['DiskType'])
+            else:
+                available_disk_categories[i['Zone']] = set([])
+        return available_disk_categories
 
     def _get_pagination(self, element):
         page_number = int(findtext(element, 'PageNumber'))
@@ -1842,7 +1867,7 @@ class CVMDriver(NodeDriver):
                           size=page_size,
                           current=page_number)
 
-    def _request_client(self, region):
+    def _cvm_client(self, region):
         cred = credential.Credential(self.key, self.secret)
         httpProfile = HttpProfile()
         httpProfile.endpoint = "cvm.tencentcloudapi.com"
@@ -1850,6 +1875,26 @@ class CVMDriver(NodeDriver):
         clientProfile = ClientProfile()
         clientProfile.httpProfile = httpProfile
         client = cvm_client.CvmClient(cred, region, clientProfile)
+        return client
+
+    def _cbs_client(self, region):
+        cred = credential.Credential(self.key, self.secret)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "cbs.tencentcloudapi.com"
+
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = cbs_client.CbsClient(cred, region, clientProfile)
+        return client
+
+    def _vpc_client(self, region):
+        cred = credential.Credential(self.key, self.secret)
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "vpc.tencentcloudapi.com"
+
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = vpc_client.VpcClient(cred, region, clientProfile)
         return client
 
     def _request_multiple_pages(self, path, params, parse_func):
@@ -1877,66 +1922,89 @@ class CVMDriver(NodeDriver):
 
     # Key pair management methods
 
-    def list_key_pairs(self, fingerprint=None):
-        params = {'Action': 'DescribeKeyPairs', 'RegionId': self.region}
-        if fingerprint:
-            params['KeyPairFingerPrint'] = fingerprint
-        response = self.connection.request(self.path, params=params)
-        elems = findall(element=response.object,
-                        xpath='KeyPairs/KeyPair',
-                        namespace=self.namespace)
+    def list_key_pairs(self, key_id=None):
+        params = {}
+        if isinstance(key_id, str):
+            KeyIds = [key_id]
+        elif isinstance(key_id, list):
+            KeyIds = key_id
+        if KeyIds:
+            params['KeyIds'] = KeyIds
+        req = models.DescribeKeyPairsRequest()
+        req.from_json_string(json.dumps(params))
 
-        key_pairs = self._to_key_pairs(elems=elems)
+        client = self._cvm_client(region)
+        resp = client.DescribeKeyPairs(req)
+
+        key_elements = json.loads(resp.to_json_string()).get('KeyPairSet', [])
+
+        key_pairs = [self._to_key_pair(elem=elem) for elem in key_elements]
         return key_pairs
 
     def get_key_pair(self, name):
+        params = {}
+        Filters = [{'Name': 'key-name', 'Values': [name]}]
+        params['Filters'] = Filters
+        req = models.DescribeKeyPairsRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.DescribeKeyPairs(req)
+
+        key_elements = json.loads(resp.to_json_string()).get('KeyPairSet', [])
+
+        key_pairs = [self._to_key_pair(elem=elem) for elem in key_elements]
+        if key_pairs:
+            return key_pairs[0]
+        else:
+            return []
+
+    def create_key_pair(self, name, project_id=None):
+        params = {'KeyName': name, 'ProjectId': project_id}
+        req = models.CreateKeyPairRequest()
+        req.from_json_string(json.dumps(params))
+
+        client = self._cvm_client(region)
+        resp = client.CreateKeyPair(req)
+        key_elements = json.loads(resp.to_json_string()).get('KeyPair', [])
+        key_pair = self._to_key_pair(elem=key_elements)
+        return key_pair
+
+    def import_key_pair_from_string(self, name, publickey, project_id=None):
         params = {
-            'Action': 'DescribeKeyPairs',
             'KeyName': name,
-            'RegionId': self.region
+            'ProjectId': project_id,
+            'PublicKey': PublicKey
         }
+        req = models.ImportKeyPairRequest()
+        req.from_json_string(json.dumps(params))
 
-        response = self.connection.request(self.path, params=params)
-        elems = findall(element=response.object,
-                        xpath='KeyPairs/KeyPair',
-                        namespace=self.namespace)
-        key_pair = self._to_key_pairs(elems=elems)[0]
-        return key_pair
+        client = self._cvm_client(region)
+        resp = client.ImportKeyPair(req)
+        key_ID = json.loads(resp.to_json_string()).get('KeyId', [])
+        return KeyPair(name=key_ID,
+                       public_key=None,
+                       fingerprint=None,
+                       driver=self)
 
-    def create_key_pair(self, name):
-        params = {
-            'Action': 'CreateKeyPair',
-            'KeyName': name,
-            'RegionId': self.region
-        }
+    def delete_key_pair(self, key_id):
+        if isinstance(key_id, str):
+            keyId = [key_id]
+        elif isinstance(key_id, list):
+            keyId = key_id
+        else:
+            raise AttributeError('keyId must be list of string or string')
 
-        response = self.connection.request(self.path, params=params)
-        elem = response.object
-        key_pair = self._to_key_pair(elem=elem)
-        return key_pair
+        params = {'KeyIds': keyId}
+        req = models.DeleteKeyPairsRequest()
+        req.from_json_string(json.dumps(params))
 
-    def import_key_pair_from_string(self, name, key_material):
-        params = {
-            'Action': 'ImportKeyPair',
-            'KeyPairName': name,
-            'PublicKeyBody': key_material,
-            'RegionId': self.region
-        }
+        client = self._cvm_client(region)
+        resp = client.DeleteKeyPairs(req)
 
-        response = self.connection.request(self.path, params=params)
-        elem = response.object
-        key_pair = self._to_key_pair(elem=elem)
-        return key_pair
+        RequestId = json.loads(resp.to_json_string()).get('RequestId', [])
 
-    def delete_key_pair(self, key_pair):
-        params = {
-            'Action': 'DeleteKeyPairs',
-            'KeyPairNames': '["%s"]' % key_pair.name,
-            'RegionId': self.region
-        }
-        res = self.connection.request(self.path, params=params)
-
-        return res.status == 200
+        return RequestId
 
     def _get_pubkey_ssh2_fingerprint(self, pubkey):
         key = base64.b64decode(pubkey.strip().split()[1].encode('ascii'))
@@ -1971,30 +2039,21 @@ class CVMDriver(NodeDriver):
 
         return result
 
-    def _to_key_pairs(self, elems):
-        key_pairs = [self._to_key_pair(elem=elem) for elem in elems]
-        return key_pairs
+    def _to_key_pair(self, keys):
+        name = keys['KeyName']
+        public_key = keys['PublicKey']
 
-    def _to_key_pair(self, elem):
-        name = findtext(element=elem,
-                        xpath='KeyPairName',
-                        namespace=self.namespace)
-        fingerprint = findtext(element=elem,
-                               xpath='KeyPairFingerPrint',
-                               namespace=self.namespace).strip()
-
-        key_pair = KeyPair(name=name,
-                           public_key=None,
-                           fingerprint=fingerprint,
-                           driver=self)
-        return key_pair
+        return KeyPair(name=name,
+                       public_key=public_key,
+                       fingerprint=None,
+                       driver=self)
 
     def ex_allocate_public_ip(self, node):
-        params = {
-            'Action': 'AllocatePublicIpAddress',
-            'InstanceId': node.id,
-            'RegionId': self.region
-        }
-        res = self.connection.request(self.path, params=params)
+        params = {}
+        req = vpc_models.AllocateAddressesRequest()
+        req.from_json_string(json.dumps(params))
+        client = self._vpc_client(self.region)
+        resp = client.AllocateAddresses(req)
+        ip_address = json.loads(resp.to_json_string()).get('AddressSet', [])
 
-        return res.status == 200
+        return ip_address
