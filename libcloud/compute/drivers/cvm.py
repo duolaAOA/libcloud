@@ -27,7 +27,7 @@ import hashlib
 from libcloud.common.tencent import TencentHTTPResponse, SignedTencentConnection
 from libcloud.common.types import LibcloudError
 from libcloud.compute.base import Node, NodeDriver, NodeImage, NodeSize, \
-    StorageVolume, VolumeSnapshot, NodeLocation, KeyPair
+    StorageVolume, VolumeSnapshot, NodeLocation
 from libcloud.compute.types import NodeState, StorageVolumeState, \
     VolumeSnapshotState
 from libcloud.utils.py3 import _real_unicode as u
@@ -357,6 +357,51 @@ RESOURCE_EXTRA_ATTRIBUTES_MAP = {
         }
     }
 }
+
+
+class KeyPair(object):
+    """
+    Represents a SSH key pair.
+    """
+
+    def __init__(self,
+                 name,
+                 public_key,
+                 fingerprint,
+                 driver,
+                 private_key=None,
+                 Id=None,
+                 extra=None):
+        """
+        Constructor.
+
+        :keyword    name: Name of the key pair object.
+        :type       name: ``str``
+
+        :keyword    fingerprint: Key fingerprint.
+        :type       fingerprint: ``str``
+
+        :keyword    public_key: Public key in OpenSSH format.
+        :type       public_key: ``str``
+
+        :keyword    private_key: Private key in PEM format.
+        :type       private_key: ``str``
+
+        :keyword    extra: Provider specific attributes associated with this
+                           key pair. (optional)
+        :type       extra: ``dict``
+        """
+        self.id = Id
+        self.name = name
+        self.fingerprint = fingerprint
+        self.public_key = public_key
+        self.private_key = private_key
+        self.driver = driver
+        self.extra = extra or {}
+
+    def __repr__(self):
+        return ('<KeyPair id=%s name=%s fingerprint=%s driver=%s>' %
+                (self.id, self.name, self.fingerprint, self.driver.name))
 
 
 class CVMConnection(SignedTencentConnection):
@@ -1967,11 +2012,11 @@ class CVMDriver(NodeDriver):
         key_pair = self._to_key_pair(keys=key_elements)
         return key_pair
 
-    def import_key_pair_from_string(self, name, publickey, project_id):
+    def import_key_pair_from_string(self, name, publickey, project_id=0):
         params = {
             'KeyName': name,
             'ProjectId': project_id,
-            'PublicKey': PublicKey
+            'PublicKey': publickey
         }
         req = models.ImportKeyPairRequest()
         req.from_json_string(json.dumps(params))
@@ -1979,8 +2024,9 @@ class CVMDriver(NodeDriver):
         client = self._cvm_client(self.region)
         resp = client.ImportKeyPair(req)
         key_ID = json.loads(resp.to_json_string()).get('KeyId', [])
-        return KeyPair(name=key_ID,
+        return KeyPair(name=name,
                        public_key=None,
+                       private_key=None,
                        fingerprint=None,
                        driver=self)
 
@@ -2039,9 +2085,12 @@ class CVMDriver(NodeDriver):
     def _to_key_pair(self, keys):
         name = keys['KeyName']
         public_key = keys['PublicKey']
-
-        return KeyPair(name=name,
+        private_key = keys['PrivateKey']
+        Id = keys['KeyId']
+        return KeyPair(Id=Id,
+                       name=name,
                        public_key=public_key,
+                       private_key=private_key,
                        fingerprint=None,
                        driver=self)
 
