@@ -517,10 +517,10 @@ class CVMDriver(NodeDriver):
     disk_categories = DiskCategory
 
     NODE_STATE_MAPPING = {
-        'Starting': NodeState.PENDING,
-        'Running': NodeState.RUNNING,
-        'Stopping': NodeState.PENDING,
-        'Stopped': NodeState.STOPPED
+        'Starting': 'PENDING',
+        'Running': 'RUNNING',
+        'Stopping': 'PENDING',
+        'Stopped': 'STOPPED'
     }
 
     VOLUME_STATE_MAPPING = {
@@ -762,9 +762,9 @@ class CVMDriver(NodeDriver):
                                 'with id %s. ' % node_id,
                                 driver=self)
         node = nodes[0]
-        self._wait_until_state([node], NodeState.STOPPED)
+        self._wait_until_state([node], 'STOPPED')
         self.ex_start_node(node)
-        self._wait_until_state(nodes, NodeState.RUNNING)
+        self._wait_until_state(nodes, 'RUNNING')
 
         # if 'ex_allocate_public_ip_address' in kwargs:
         #     self.ex_allocate_public_ip(node)
@@ -781,14 +781,17 @@ class CVMDriver(NodeDriver):
                                 default to ``False``
         :type ex_force_stop: ``bool``
         """
-        params = {'InstanceId': node.id, 'ForceStop': u(ex_force_stop).lower()}
+        params = {
+            'InstanceIds': [node.id],
+            'ForceStop': u(ex_force_stop).lower()
+        }
         req = models.RebootInstancesRequest()
         req.from_json_string(json.dumps(params))
         client = self._cvm_client(self.region)
         resp = client.RebootInstances(req)
         res = json.loads(resp.to_json_string())
 
-        return self._wait_until_state([node], NodeState.RUNNING)
+        return self._wait_until_state([node], 'RUNNING')
 
     def destroy_node(self, node):
         nodes = self.list_nodes(ex_node_ids=[node.id])
@@ -796,12 +799,12 @@ class CVMDriver(NodeDriver):
             raise LibcloudError('could not find the node with id %s.' %
                                 node.id)
         current = nodes[0]
-        if current.state == NodeState.RUNNING:
+        if current.state == 'RUNNING':
             # stop node first
             self.ex_stop_node(node)
-            self._wait_until_state(nodes, NodeState.STOPPED)
+            self._wait_until_state(nodes, 'STOPPED')
 
-        params = {'InstanceId': node.id}
+        params = {'InstanceIds': [node.id]}
         req = models.TerminateInstancesRequest()
         req.from_json_string(json.dumps(params))
         client = self._cvm_client(self.region)
@@ -820,13 +823,13 @@ class CVMDriver(NodeDriver):
         :rtype: ``bool``
         """
         req = models.StartInstancesRequest()
-        params = {'InstanceId': node.id}
+        params = {'InstanceIds': [node.id]}
         req.from_json_string(json.dumps(params))
         client = self._cvm_client(self.region)
         resp = client.StartInstances(req)
         res = json.loads(resp.to_json_string())
 
-        return self._wait_until_state([node], NodeState.RUNNING)
+        return self._wait_until_state([node], 'RUNNING')
 
     def ex_stop_node(self, node, ex_force_stop=False):
         """
@@ -845,13 +848,13 @@ class CVMDriver(NodeDriver):
         """
 
         req = models.StopInstancesRequest()
-        params = {'InstanceId': node.id}
+        params = {'InstanceIds': [node.id]}
         req.from_json_string(json.dumps(params))
         client = self._cvm_client(self.region)
         resp = client.StopInstances(req)
         res = json.loads(resp.to_json_string())
 
-        return self._wait_until_state([node], NodeState.STOPPED)
+        return self._wait_until_state([node], 'STOPPED')
 
     def ex_resize_node(self, node, size):
         """
@@ -861,11 +864,11 @@ class CVMDriver(NodeDriver):
         :param size: The new size of the node
         """
 
-        req = models.ResetInstancesTypeRequest()
-        params = {'InstanceId': node.id, 'InstanceType': node.name}
+        req = models.ResizeInstanceDisksRequest()
+        params = {'InstanceId': node.id, 'DataDisks': [{'DiskSize': size}]}
         req.from_json_string(json.dumps(params))
         client = self._cvm_client(self.region)
-        resp = client.ResetInstancesType(req)
+        resp = client.ResizeInstanceDisks(req)
         res = json.loads(resp.to_json_string())
 
         return res
@@ -1118,8 +1121,8 @@ class CVMDriver(NodeDriver):
         if group_id is None:
             raise AttributeError('group_id is required')
 
-        if node.state != NodeState.RUNNING and \
-           node.state != NodeState.STOPPED:
+        if node.state != 'RUNNING' and \
+           node.state != 'STOPPED':
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
@@ -1132,7 +1135,7 @@ class CVMDriver(NodeDriver):
         elif isinstance(group_id, str):
             SecurityGroupIds = [group_id]
         params = {
-            'InstanceIds': InstanceIds,
+            'InstanceIds': [InstanceIds],
             'SecurityGroupIds': SecurityGroupIds
         }
         req = models.AssociateSecurityGroupsRequest()
@@ -1161,8 +1164,8 @@ class CVMDriver(NodeDriver):
         if group_id is None:
             raise AttributeError('group_id is required')
 
-        if node.state != NodeState.RUNNING and \
-           node.state != NodeState.STOPPED:
+        if node.state != 'RUNNING' and \
+           node.state != 'STOPPED':
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
@@ -1175,7 +1178,7 @@ class CVMDriver(NodeDriver):
         elif isinstance(group_id, str):
             SecurityGroupIds = [group_id]
         params = {
-            'InstanceIds': InstanceIds,
+            'InstanceIds': [InstanceIds],
             'SecurityGroupIds': SecurityGroupIds
         }
         req = models.DisassociateSecurityGroupsRequest()
@@ -1433,7 +1436,7 @@ class CVMDriver(NodeDriver):
         """
         params = {
             'Action': 'AttachDisk',
-            'InstanceId': node.id,
+            'InstanceIds': node.id,
             'DiskId': volume.id
         }
 
@@ -1922,23 +1925,17 @@ class CVMDriver(NodeDriver):
 
     # Key pair management methods
 
-    def list_key_pairs(self, key_id=None):
+    def list_key_pairs(self):
         params = {}
-        if isinstance(key_id, str):
-            KeyIds = [key_id]
-        elif isinstance(key_id, list):
-            KeyIds = key_id
-        if KeyIds:
-            params['KeyIds'] = KeyIds
         req = models.DescribeKeyPairsRequest()
         req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.DescribeKeyPairs(req)
 
         key_elements = json.loads(resp.to_json_string()).get('KeyPairSet', [])
 
-        key_pairs = [self._to_key_pair(elem=elem) for elem in key_elements]
+        key_pairs = [self._to_key_pair(keys=elem) for elem in key_elements]
         return key_pairs
 
     def get_key_pair(self, name):
@@ -1948,29 +1945,29 @@ class CVMDriver(NodeDriver):
         req = models.DescribeKeyPairsRequest()
         req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.DescribeKeyPairs(req)
 
         key_elements = json.loads(resp.to_json_string()).get('KeyPairSet', [])
 
-        key_pairs = [self._to_key_pair(elem=elem) for elem in key_elements]
+        key_pairs = [self._to_key_pair(keys=elem) for elem in key_elements]
         if key_pairs:
             return key_pairs[0]
         else:
             return []
 
-    def create_key_pair(self, name, project_id=None):
+    def create_key_pair(self, name, project_id=0):
         params = {'KeyName': name, 'ProjectId': project_id}
         req = models.CreateKeyPairRequest()
         req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.CreateKeyPair(req)
         key_elements = json.loads(resp.to_json_string()).get('KeyPair', [])
-        key_pair = self._to_key_pair(elem=key_elements)
+        key_pair = self._to_key_pair(keys=key_elements)
         return key_pair
 
-    def import_key_pair_from_string(self, name, publickey, project_id=None):
+    def import_key_pair_from_string(self, name, publickey, project_id):
         params = {
             'KeyName': name,
             'ProjectId': project_id,
@@ -1979,7 +1976,7 @@ class CVMDriver(NodeDriver):
         req = models.ImportKeyPairRequest()
         req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.ImportKeyPair(req)
         key_ID = json.loads(resp.to_json_string()).get('KeyId', [])
         return KeyPair(name=key_ID,
@@ -1999,7 +1996,7 @@ class CVMDriver(NodeDriver):
         req = models.DeleteKeyPairsRequest()
         req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.DeleteKeyPairs(req)
 
         RequestId = json.loads(resp.to_json_string()).get('RequestId', [])
