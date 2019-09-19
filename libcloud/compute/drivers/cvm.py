@@ -668,20 +668,23 @@ class CVMDriver(NodeDriver):
         locations = [self._to_location(each) for each in res]
         return locations
 
-    def list_prices(self, image_id):
-        req = models.InquiryPriceRunInstancesRequest()
-        params = {
-            'Placement': {
-                'Zone': self.region + '-1'
-            },
-            'ImageId': image_id
-        }
-        req.from_json_string(json.dumps(params))
+    def list_prices(self):
+        nodes = self.list_nodes()
+        prices = {}
+        for node in nodes:
+            req = models.InquiryPriceRunInstancesRequest()
+            params = {'Placement': {'Zone': node.zone}, 'ImageId': node.image}
+            req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(self.region)
-        resp = client.InquiryPriceRunInstances(req)
-        prices = json.loads(resp.to_json_string()).get('Price', {})
+            client = self._cvm_client(self.region)
+            resp = client.InquiryPriceRunInstances(req)
+            price = json.loads(resp.to_json_string()).get('Price', {})
+            prices[node.id] = price
         return prices
+
+    def get_price(self, node_id):
+        prices = self.list_prices()
+        return prices.get(node_id, {})
 
     def create_node(self,
                     name,
@@ -1602,19 +1605,23 @@ class CVMDriver(NodeDriver):
         """
         _id = instance['InstanceId']
         name = instance['InstanceName']
+        image = instance['ImageId']
         state = ''
         public_ips = instance['PublicIpAddresses']
         private_ips = instance['PrivateIpAddresses']
+        zone = instance['Placement']['Zone']
 
         # Extra properties
         extra = {}
 
         node = Node(id=_id,
+                    image=image,
                     name=name,
                     state=state,
                     public_ips=public_ips,
                     private_ips=private_ips,
                     driver=self.connection.driver,
+                    zone=zone,
                     extra=extra)
         return node
 
