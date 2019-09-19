@@ -918,7 +918,7 @@ class CVMDriver(NodeDriver):
 
         return res
 
-    def ex_create_security_group(self, description=None, name=None):
+    def ex_create_security_group(self, description, name):
         """
         Create a new security group.
 
@@ -946,7 +946,7 @@ class CVMDriver(NodeDriver):
         res = json.loads(resp.to_json_string()).get('SecurityGroup', {})
         return res
 
-    def ex_delete_security_group_by_id(self, group_id=None):
+    def ex_delete_security_group_by_id(self, group_id):
         """
         Delete a new security group.
 
@@ -954,10 +954,10 @@ class CVMDriver(NodeDriver):
         :type group_id: ``str``
         """
         params = {}
-        if group_id:
+        if isinstance(group_id, str):
             params['SecurityGroupId'] = group_id
         else:
-            AttributeError('SecurityGroupId is required')
+            AttributeError('SecurityGroupId must be strin type')
 
         req = vpc_models.DeleteSecurityGroupRequest()
         req.from_json_string(json.dumps(params))
@@ -1102,20 +1102,7 @@ class CVMDriver(NodeDriver):
         :return: a list of defined security groups
         :rtype: ``list`` of ``CVMSecurityGroup``
         """
-        params = {'Action': 'DescribeSecurityGroups', 'RegionId': self.region}
-
-        if ex_filters and isinstance(ex_filters, dict):
-            ex_filters.update(params)
-            params = ex_filters
-
-        def _parse_response(resp_object):
-            sg_elements = findall(resp_object,
-                                  'SecurityGroups/SecurityGroup',
-                                  namespace=self.namespace)
-            sgs = [self._to_security_group(el) for el in sg_elements]
-            return sgs
-
-        return self._request_multiple_pages(self.path, params, _parse_response)
+        raise NotImplementedError
 
     def ex_list_security_group_attributes(self,
                                           group_id=None,
@@ -1148,7 +1135,7 @@ class CVMDriver(NodeDriver):
                                namespace=self.namespace)
         return [self._to_security_group_attribute(el) for el in sga_elements]
 
-    def ex_join_security_group(self, node, group_id=None):
+    def ex_join_security_group(self, node, group_id):
         """
         Join a node into security group.
 
@@ -1170,29 +1157,30 @@ class CVMDriver(NodeDriver):
            node.state != 'STOPPED':
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
-
-        if isinstance(node.id, list):
-            InstanceIds = node.id
-        elif isinstance(node.id, str):
+        if isinstance(node, Node):
             InstanceIds = [node.id]
+        else:
+            raise TypeError('node must be one node object')
         if isinstance(group_id, list):
             SecurityGroupIds = group_id
         elif isinstance(group_id, str):
             SecurityGroupIds = [group_id]
+        else:
+            raise TypeError('SecurityGroupIds must be string or list')
         params = {
-            'InstanceIds': [InstanceIds],
+            'InstanceIds': InstanceIds,
             'SecurityGroupIds': SecurityGroupIds
         }
         req = models.AssociateSecurityGroupsRequest()
         req.from_json_string(json.dumps(params))
 
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.AssociateSecurityGroups(req)
         RequestId = json.loads(resp.to_json_string()).get('RequestId', '')
 
         return RequestId
 
-    def ex_leave_security_group(self, node, group_id=None):
+    def ex_leave_security_group(self, node, group_id):
         """
         Leave a node from security group.
 
@@ -1214,21 +1202,24 @@ class CVMDriver(NodeDriver):
             raise LibcloudError('The node state with id % s need\
                                 be running or stopped .' % node.id)
 
-        if isinstance(node.id, list):
-            InstanceIds = node.id
-        elif isinstance(node.id, str):
+        if isinstance(node, Node):
             InstanceIds = [node.id]
+        else:
+            raise TypeError('node must be one node object')
         if isinstance(group_id, list):
             SecurityGroupIds = group_id
         elif isinstance(group_id, str):
             SecurityGroupIds = [group_id]
+        else:
+            raise TypeError('SecurityGroupIds must be string or list')
+
         params = {
-            'InstanceIds': [InstanceIds],
+            'InstanceIds': InstanceIds,
             'SecurityGroupIds': SecurityGroupIds
         }
         req = models.DisassociateSecurityGroupsRequest()
         req.from_json_string(json.dumps(params))
-        client = self._cvm_client(region)
+        client = self._cvm_client(self.region)
         resp = client.DisassociateSecurityGroups(req)
         RequestId = json.loads(resp.to_json_string()).get('RequestId', '')
 
