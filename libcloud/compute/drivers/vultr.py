@@ -160,26 +160,27 @@ class VultrNodeDriver(NodeDriver):
     name = 'Vultr'
     website = 'https://www.vultr.com'
 
-    NODE_STATE_MAP = {'pending': NodeState.PENDING,
-                      'active': NodeState.RUNNING}
+    NODE_STATE_MAP = {
+        'pending': NodeState.PENDING,
+        'active': NodeState.RUNNING
+    }
 
-    EX_CREATE_YES_NO_ATTRIBUTES = ['enable_ipv6',
-                                   'enable_private_network',
-                                   'auto_backups',
-                                   'notify_activate',
-                                   'ddos_protection']
+    EX_CREATE_YES_NO_ATTRIBUTES = [
+        'enable_ipv6', 'enable_private_network', 'auto_backups',
+        'notify_activate', 'ddos_protection'
+    ]
 
-    EX_CREATE_ID_ATTRIBUTES = {'iso_id': 'ISOID',
-                               'script_id': 'SCRIPTID',
-                               'snapshot_id': 'SNAPSHOTID',
-                               'app_id': 'APPID'}
+    EX_CREATE_ID_ATTRIBUTES = {
+        'iso_id': 'ISOID',
+        'script_id': 'SCRIPTID',
+        'snapshot_id': 'SNAPSHOTID',
+        'app_id': 'APPID'
+    }
 
-    EX_CREATE_ATTRIBUTES = ['ipxe_chain_url',
-                            'label',
-                            'userdata',
-                            'reserved_ip_v4',
-                            'hostname',
-                            'tag']
+    EX_CREATE_ATTRIBUTES = [
+        'ipxe_chain_url', 'label', 'userdata', 'reserved_ip_v4', 'hostname',
+        'tag'
+    ]
     EX_CREATE_ATTRIBUTES.extend(EX_CREATE_YES_NO_ATTRIBUTES)
     EX_CREATE_ATTRIBUTES.extend(EX_CREATE_ID_ATTRIBUTES.keys())
 
@@ -232,7 +233,12 @@ class VultrNodeDriver(NodeDriver):
     def list_images(self):
         return self._list_resources('/v1/os/list', self._to_image)
 
-    def create_node(self, name, size, image, location, ex_ssh_key_ids=None,
+    def create_node(self,
+                    name,
+                    size,
+                    image,
+                    location,
+                    ex_ssh_key_ids=None,
                     ex_create_attr=None):
         """
         Create a node
@@ -285,8 +291,12 @@ class VultrNodeDriver(NodeDriver):
         :rtype: :class:`Node`
 
         """
-        params = {'DCID': location.id, 'VPSPLANID': size.id,
-                  'OSID': image.id, 'label': name}
+        params = {
+            'DCID': location.id,
+            'VPSPLANID': size.id,
+            'OSID': image.id,
+            'label': name
+        }
 
         if ex_ssh_key_ids is not None:
             params['SSHKEYID'] = ','.join(ex_ssh_key_ids)
@@ -352,21 +362,40 @@ class VultrNodeDriver(NodeDriver):
         else:
             public_ips = []
 
-        extra_keys = []
         extra = {}
-        for key in extra_keys:
-            if key in data:
-                extra[key] = data[key]
+        if data.get('vcpu_count'):
+            extra['CPU'] = data['vcpu_count']
+        if data.get('VPSPLANID'):
+            sizes = self.list_sizes()
+            for s in sizes:
+                if s.id == data.get('VPSPLANID'):
+                    extra['容量型号'] = s.name
+        if data.get('DCID'):
+            locations = self.list_locations()
+            for l in locations:
+                if l.id == data.get('DCID'):
+                    extra['地区信息'] = l.name
+        if data.get('cost_per_month'):
+            extra['cost_per_month'] = data['cost_per_month']
 
-        node = Node(id=data['SUBID'], name=data['label'], state=state,
-                    public_ips=public_ips, private_ips=None, extra=extra,
+        node = Node(id=data['SUBID'],
+                    name=data['label'],
+                    state=state,
+                    public_ips=public_ips,
+                    private_ips=None,
+                    extra=extra,
+                    created_at=data['date_created'],
+                    size=extra.get('容量型号'),
+                    image=data['os'],
                     driver=self)
 
         return node
 
     def _to_location(self, data):
-        return NodeLocation(id=data['DCID'], name=data['name'],
-                            country=data['country'], driver=self)
+        return NodeLocation(id=data['DCID'],
+                            name=data['name'],
+                            country=data['country'],
+                            driver=self)
 
     def _to_size(self, data):
         extra = {
@@ -379,16 +408,23 @@ class VultrNodeDriver(NodeDriver):
         bandwidth = float(data['bandwidth'])
         price = float(data['price_per_month'])
 
-        return NodeSize(id=data['VPSPLANID'], name=data['name'],
-                        ram=ram, disk=disk,
-                        bandwidth=bandwidth, price=price,
-                        extra=extra, driver=self)
+        return NodeSize(id=data['VPSPLANID'],
+                        name=data['name'],
+                        ram=ram,
+                        disk=disk,
+                        bandwidth=bandwidth,
+                        price=price,
+                        extra=extra,
+                        driver=self)
 
     def _to_image(self, data):
         extra = {'arch': data['arch'], 'family': data['family']}
-        return NodeImage(id=data['OSID'], name=data['name'], extra=extra,
+        return NodeImage(id=data['OSID'],
+                         name=data['name'],
+                         extra=extra,
                          driver=self)
 
     def _to_ssh_key(self, data):
-        return SSHKey(id=data['SSHKEYID'], name=data['name'],
+        return SSHKey(id=data['SSHKEYID'],
+                      name=data['name'],
                       pub_key=data['ssh_key'])
