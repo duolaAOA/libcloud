@@ -378,6 +378,10 @@ class VultrNodeDriver(NodeDriver):
         if data.get('cost_per_month'):
             extra['cost_per_month'] = data['cost_per_month']
 
+        extra['初始密码'] = data['default_password']
+        extra['Disk'] = data['disk']
+        extra['pending_charges'] = data['pending_charges']
+
         node = Node(id=data['SUBID'],
                     name=data['label'],
                     state=state,
@@ -385,8 +389,8 @@ class VultrNodeDriver(NodeDriver):
                     private_ips=None,
                     extra=extra,
                     created_at=data['date_created'],
-                    size=extra.get('容量型号'),
-                    image=data['os'],
+                    size=data.get('VPSPLANID'),
+                    image=data.get('OSID'),
                     driver=self)
 
         return node
