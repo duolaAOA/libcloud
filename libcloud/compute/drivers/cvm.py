@@ -1801,7 +1801,7 @@ class CVMDriver(NodeDriver):
 
     def _to_size(self, resp):
         _id = resp['InstanceType']
-        ram = float(0)
+        ram = float(resp['Memory'])
         extra = {}
         extra['cpu_core_count'] = int(resp['CPU'])
         extra['instance_type_family'] = resp['InstanceFamily']
