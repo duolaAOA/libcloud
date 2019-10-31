@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """
 Common settings and connection objects for DigitalOcean Cloud
 """
@@ -25,8 +24,7 @@ from libcloud.common.base import JsonResponse
 from libcloud.common.types import LibcloudError, InvalidCredsError
 
 __all__ = [
-    'DigitalOcean_v2_Response',
-    'DigitalOcean_v2_Connection',
+    'DigitalOcean_v2_Response', 'DigitalOcean_v2_Connection',
     'DigitalOceanBaseDriver'
 ]
 
@@ -38,18 +36,22 @@ class DigitalOcean_v1_Error(LibcloudError):
     supported.
     """
 
-    def __init__(self,
-                 value=('Driver no longer supported: Version 1 of the '
-                        'DigitalOcean API reached end of life on November 9, '
-                        '2015. Use the v2 driver. Please visit: '
-                        'https://developers.digitalocean.com/documentation/changelog/api-v1/sunsetting-api-v1/'),  # noqa: E501
-                 driver=None):
+    def __init__(
+            self,
+            value=(
+                'Driver no longer supported: Version 1 of the '
+                'DigitalOcean API reached end of life on November 9, '
+                '2015. Use the v2 driver. Please visit: '
+                'https://developers.digitalocean.com/documentation/changelog/api-v1/sunsetting-api-v1/'
+            ),  # noqa: E501
+            driver=None):
         super(DigitalOcean_v1_Error, self).__init__(value, driver=driver)
 
 
 class DigitalOcean_v2_Response(JsonResponse):
-    valid_response_codes = [httplib.OK, httplib.ACCEPTED, httplib.CREATED,
-                            httplib.NO_CONTENT]
+    valid_response_codes = [
+        httplib.OK, httplib.ACCEPTED, httplib.CREATED, httplib.NO_CONTENT
+    ]
 
     def parse_error(self):
         if self.status == httplib.UNAUTHORIZED:
@@ -85,15 +87,17 @@ class DigitalOcean_v2_Connection(ConnectionKey):
         headers['Content-Type'] = 'application/json'
         return headers
 
-    def add_default_params(self, params):
+    def add_default_params(self, params, method):
         """
         Add parameters that are necessary for every request
 
-        This method adds ``per_page`` to the request to reduce the total
+        This method adds ``per_page`` to the GET request to reduce the total
         number of paginated requests to the API.
         """
         # pylint: disable=maybe-no-member
-        params['per_page'] = self.driver.ex_per_page
+        if method == 'GET':
+            params['per_page'] = self.driver.ex_per_page
+
         return params
 
 
@@ -153,8 +157,16 @@ class DigitalOcean_v2_BaseDriver(DigitalOceanBaseDriver):
     """
     connectionCls = DigitalOcean_v2_Connection
 
-    def __init__(self, key, secret=None, secure=True, host=None, port=None,
-                 api_version=None, region=None, ex_per_page=200, **kwargs):
+    def __init__(self,
+                 key,
+                 secret=None,
+                 secure=True,
+                 host=None,
+                 port=None,
+                 api_version=None,
+                 region=None,
+                 ex_per_page=200,
+                 **kwargs):
         self.ex_per_page = ex_per_page
         super(DigitalOcean_v2_BaseDriver, self).__init__(key, **kwargs)
 

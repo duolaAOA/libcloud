@@ -7,113 +7,23 @@ Changes in Apache Libcloud in development
 General
 ~~~~~~~
 
-- [OpenStack] Update OpenStack identity driver so a custom project can be
-  selected using ``domain_name`` keyword argument. Previously, that wasn't
-  possible and the first project which was returned by the API was always
-  selected. (GITHUB-1293)
-  [Miguel Caballer - @micafer]
-- Add new ``extra`` attribute to the base ``NodeLocation`` class. (GITHUB-1282)
-  [Dimitris Moraitis - @d-mo]
-
-Compute
-~~~~~~~
-
-- [Google Compute Engine] Fix the driver so ``list_nodes()`` method doesn't
-  throw if there is a node in a ``SUSPENDED`` state.
-
-  Also update the code so it doesn't crash if an unknown node state which is
-  not defined locally is returned by the API when listing nodes. Such states
-  are now mapped to ``UNKNOWN``. (GITHUB-1296, LIBCLOUD-1045)
-
-  Reported by rafa alistair.
-  [Tomaz Muraus]
-
-- [OpenStack] Fix a bug with retrieving floating IP address when a
-  ``device_owner`` of a port is ``compute:None``. (GITHUB-1295)
-  [Miguel Caballer - @micafer]
-- [Packet] Add various new extension methods to Packet.net driver
-  (``ex_reinstall_node``, ``ex_list_projects``,
-  ``ex_get_bgp_config_for_project``, ``ex_get_bgp_config``,
-  ``ex_list_nodes_for_project``, etc.). (GITHUB-1282)
-  [Dimitris Moraitis - @d-mo]
-
-- [Maxihost] Add new compute driver for Maxihost provider
-  (https://www.maxihost.com/). (GITHUB-1298)
-  [Spyros Tzavaras - @mpempekos]
-
-- [Azure ARM] Add various improvements to the Azure ARM driver:
-  - Add functionality to resize a volume in Azure
-  - Add functionality to update the network profile of a node
-  - Add functionality to update a network interface's properties
-  - Add functionality to check IP address availability (GITHUB-1244)
-  [Palash Gandhi - @palashgandhi]
-
-- [EC2] Allow user to pass arbitrary filters to ``list_volumes`` method by
-  passing a dictionary with filters as ``ex_filters`` method argument value.
-  (GITHUB-1300)
-  [Palash Gandhi - @palashgandhi]
-
-- [GCE] Add new ``ex_instancegroupmanager_set_autohealingpolicies`` method to
-  the GCE driver.
-
-  This method allows user to set the auto healing policies (health check to
-  use and initial delay) on GCE instance group. (GITHUB-1286)
-  [Kenta Morris - @kentamorris]
-
-- [GCE] Update GCE driver to include new operating system images such as
-  Ubuntu 18.04, RHEL 8, etc. (GITHUB-1304)
-  [Christopher Lambert - @XN137]
-
-- [GCE] Add new ``ex_resize_volume`` method to the driver. (GITHUB-1301)
-  [Palash Gandhi - @palashgandhi]
-
-- [OpenStack] Add various router management methods to the OpenStack
-  driver. (GITHUB-1281)
-  [Miguel Caballer - @micafer]
-
-Storage
-~~~~~~~
-
-- [Azure Blobs] Fix a bug with Azure storage driver works when used against a
-  storage account that was created using ``kind=BlobStrage``. The includes
-  updating minimum API version used / supported by storage driver from
-  ``2012-02-12`` to ``2014-02-14'``. (LIBCLOUD-851, GITHUB-1202, GITHUB-1294)
-  [Clemens Wolff - @c-w, Davis Kirkendall - @daviskirk]
-
-Changes in Apache Libcloud 2.5.0
---------------------------------
-
-General
-~~~~~~~
-
-- [NTT CIS] Add loadbalancer and compute drivers for NTT-CIS, rename
-  dimensiondata modules to NTT-CIS. (GITHUB-1250)
+- [NTT CIS] Add loadbalancer and compute drivers for NTT-CIS, rename dimensiondata modules to NTT-CIS (GITHUB-1250)
   [Mitch Raful]
 
-- [NTT CIS] Fix loadbalancer docs. (GITHUB-1270)
+- [NTT CIS] Fix loadbalancer docs (GITHUB-1270)
   [Mitch Raful]
 
 - Use assertIsNone instead of assertEqual with None in tests (GITHUB-1264)
   [Ken Dreyer]
-
-- Updating command line arguments to current version in Azure examples.
-  (GITHUB-1273)
-  [mitar]
+  
+- Updating command line arguments to current version in Azure examples (GITHUB-1273) [mitar]
 
 - [GCE, SoftLayer] Update GCE and Softlayer drivers to utilize crypto
   primitives from the ``cryptography`` library instead of deprecated and
   unmaintained ``PyCrypto`` library.
-
+  
   (GITHUB-1280)
   [Ryan Petrello]
-
-- Fix ``libcloud.enable_debug`` function so it doesn't leak open file handle
-  and closes the open file when the program exits when a debug mode is used.
-  [Tomaz Muraus]
-
-* Update various drivers (CloudFiles, NTT CIS etc.) so they don't leak open
-  file handles in some situations.
-  [Tomaz Muraus]
 
 Common
 ~~~~~~
@@ -121,8 +31,7 @@ Common
 - [OpenStack] Handle missing user enabled attribute (GITHUB-1261)
   [Ken Dreyer]
 
-- [Google Cloud Storage] Handle Interoperability access keys of more than 20
-  characters. (GITHUB-1272)
+- [Google Cloud Storage] Handle Interoperability access keys of more than 20 characters (GITHUB-1272)
   [Yoan Tournade]
 
 Compute
@@ -134,117 +43,68 @@ Compute
 - [OpenStack] Pagination in various OpenStack_2_NodeDriver methods (GITHUB-1263)
   [Rick van de Loo]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_create_subnet (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_create_subnet (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_delete_subnet (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_delete_subnet (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver list_volumes (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver list_volumes (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_get_volume (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_get_volume (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver create_volume (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver create_volume (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver destroy_volume (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver destroy_volume (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_list_snapshots (LIBCLOUD-874,
-  GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_list_snapshots (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver create_volume_snapshot
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver create_volume_snapshot (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver destroy_volume_snapshot
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver destroy_volume_snapshot (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_list_security_groups
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_list_security_groups (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_create_security_group
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_create_security_group (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_delete_security_group
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_delete_security_group (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_create_security_group_rule
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_create_security_group_rule (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_delete_security_group_rule
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_delete_security_group_rule (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Implement OpenStack_2_NodeDriver ex_list_floating_ip_pools
-  (LIBCLOUD-874, GITHUB-1242)
+- [OpenStack] Implement OpenStack_2_NodeDriver ex_list_floating_ip_pools (LIBCLOUD-874, GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Fix parse_error if 'code' not in API response message
-  (GITHUB-1242)
+- [OpenStack] Fix parse_error if 'code' not in API response message (GITHUB-1242)
   [Miguel Caballer]
 
-- [OpenStack] Adapt _to_port function to work with old OpenStack versions
-  (GITHUB-1242)
+- [OpenStack] Adapt _to_port function to work with old OpenStack versions (GITHUB-1242)
   [Miguel Caballer]
 
 - [OpenStack] Use SUSPENDED NodeState in OpenStack driver (GITHUB-1269)
   [Miguel Caballer]
 
-- [UpCloud] Update documentation for UpCloud driver (LIBCLOUD-1026,
-  GITHUB-1259)
+- [UpCloud] Update documentation for UpCloud driver (LIBCLOUD-1026, GITHUB-1259)
   [Ilari Mäkelä]
 
 - [NTT CIS] Fix indenting in ex_initiate_drs_failover docstring (GITHUB-1271)
   [Rick van de Loo]
 
-- [NTT CIS] Change endpoint 'canada' to 'ca' in libcloud/common/nttcis.py
-  (GITHUB-1270)
+- [NTT CIS] Change endpoint 'canada' to 'ca' in libcloud/common/nttcis.py (GITHUB-1270)
   [Mitch Raful]
-
-- [OpenStack] Fix ``detach_volume`` method so it works with v2 volumes.
-  (GITHUB-1267)
-  [Rick van de Loo]
-
-- [CloudSigma] Fix CloudSigma driver so it correctly handles subscription
-  objects without the ``start_time`` and / or ``end_time`` attribute.
-  (GITHUB-1284, LIBCLOUD-1040)
-  [aki-k, Tomaz Muraus]
-
-Storage
-~~~~~~~
-
-- [Azure] Fix ``upload_object_via_stream`` method so it also works with
-  iterators which don't implement ``seek()`` method. If the iterator doesn't
-  support seek, entire iterator content will be buffered in memory.
-  (LIBCLOUD-1043, GITHUB-1287)
-  [Clemens Wolff]
-- [CloudFiles] Fix ``download_object_as_stream`` method in the CloudFiles
-  driver. This regression / bug was inadvertently introduced when migrating
-  code to ``requests``.
-  (LIBCLOUD-1039, GITHUB-1283)
-  [Matt Seymour]
-- [CloudFiles] Fix a bug with ``ChunkStreamReader`` class and make sure file
-  descriptor is also closed if the iterator isn't fully exhausted or if the
-  iterator is never read from.
-
-  NOTE: This potential open file descriptor leakage only affected code which
-  utilized ``ex_multipart_upload_object`` method.
-  [Tomaz Muraus]
 
 Container
 ~~~~~~~~~
@@ -255,20 +115,12 @@ Container
 DNS
 ~~~
 
-- Add new driver for RcodeZero DNS (GITHUB-1256, LIBCLOUD-1025)
-  [MikeAT]
-- [DigitalOcean] Update DigitalOcean driver so it supports ``ttl`` attribute for
-  ``Record`` objects. This includes support for specifying a record ttl via
-  ``extra['ttl']`` attribute when creating and updating a record. (GITHUB-1252
-  LIBCLOUD-1022) [Kevin Roy]
+- Add new driver for RcodeZero DNS (GITHUB-1256, LIBCLOUD-1025) [MikeAT]
 
 Storage
 ~~~~~~~
 
-- Adds missing docs for param ex_prefix & adds to DummyStore. Add ex_prefix
-  kwarg to the `list_container_objects` methods in the base and dummy classes.
-  (GITHUB-1275)
-  [RichardARPANET]
+- Adds missing docs for param ex_prefix & adds to DummyStore. Add ex_prefix kwarg to the `list_container_objects` methods in the base and dummy classes. (GITHUB-1275) [RichardARPANET]
 
 Changes in Apache Libcloud 2.4.0
 --------------------------------

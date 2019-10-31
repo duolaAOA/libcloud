@@ -216,6 +216,11 @@ class Provider(Type):
     # Removed
     # SLICEHOST = 'slicehost'
 
+    SOLUSVM = 'solusvm'
+
+    CLEARCENTER = "clearcenter"
+    CLEARAPI = "clearapi"
+    MAXIHOST = "maxihost"
 
 DEPRECATED_RACKSPACE_PROVIDERS = [
     Provider.RACKSPACE_UK, Provider.RACKSPACE_NOVA_BETA,
@@ -291,6 +296,7 @@ class NodeState(Type):
     MIGRATING = 'migrating'
     NORMAL = 'normal'
     UPDATING = 'updating'
+    OFF = 'off'
 
 
 class StorageVolumeState(Type):

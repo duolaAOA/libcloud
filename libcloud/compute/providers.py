@@ -110,7 +110,6 @@ DRIVERS = {
     Provider.BSNL: ('libcloud.compute.drivers.bsnl', 'BSNLNodeDriver'),
     Provider.NTTA: ('libcloud.compute.drivers.ntta', 'NTTAmericaNodeDriver'),
     Provider.ALIYUN_ECS: ('libcloud.compute.drivers.ecs', 'ECSDriver'),
-    Provider.TENCENT_CVM: ('libcloud.compute.drivers.cvm', 'CVMDriver'),
     Provider.CLOUDSCALE: ('libcloud.compute.drivers.cloudscale',
                           'CloudscaleNodeDriver'),
     Provider.ONEANDONE: ('libcloud.compute.drivers.oneandone',
@@ -119,6 +118,12 @@ DRIVERS = {
     Provider.NTTCIS: ('libcloud.compute.drivers.nttcis', 'NttCisNodeDriver'),
     Provider.SCALEWAY: ('libcloud.compute.drivers.scaleway',
                         'ScalewayNodeDriver'),
+    Provider.SOLUSVM: ('libcloud.compute.drivers.solusvm',
+                       'SolusVMNodeDriver'),
+    Provider.CLEARCENTER: ('libcloud.compute.drivers.clearcenter',
+                           'ClearCenterNodeDriver'),
+    Provider.CLEARAPI: ('libcloud.compute.drivers.clearapi',
+                        'ClearAPINodeDriver'),
     Provider.MAXIHOST: ('libcloud.compute.drivers.maxihost',
                         'MaxihostNodeDriver')
 }

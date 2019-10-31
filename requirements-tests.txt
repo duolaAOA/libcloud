@@ -10,3 +10,4 @@ requests_mock
 pytest>=3.4,<3.5
 cryptography==2.6.1
 tencentcloud-sdk-python==3.0.86
+
