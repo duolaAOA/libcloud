@@ -1610,9 +1610,14 @@ class CVMDriver(NodeDriver):
         public_ips = instance['PublicIpAddresses']
         private_ips = instance['PrivateIpAddresses']
         zone = instance['Placement']['Zone']
-
+        created_at = instance['CreatedTime']
         # Extra properties
-        extra = {}
+        extra = {
+            'instance_type': instance['InstanceType'],
+            'creation_time': instance['CreatedTime'],
+            'expired_time': instance['ExpiredTime'],
+            'instance_charge_type': instance['InstanceChargeType']
+        }
 
         node = Node(id=_id,
                     image=image,
@@ -1622,6 +1627,7 @@ class CVMDriver(NodeDriver):
                     private_ips=private_ips,
                     driver=self.connection.driver,
                     zone=zone,
+                    created_at=created_at,
                     extra=extra)
         return node
 
