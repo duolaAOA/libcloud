@@ -102,7 +102,7 @@ if PY3:
         elif isinstance(s, int):
             return bytes([s])
         else:
-            raise TypeError("Invalid argument %r for b()" % (s,))
+            raise TypeError("Invalid argument %r for b()" % (s, ))
 
     def ensure_string(s):
         if isinstance(s, str):
@@ -110,7 +110,7 @@ if PY3:
         elif isinstance(s, bytes):
             return s.decode('utf-8')
         else:
-            raise TypeError("Invalid argument %r for ensure_string()" % (s,))
+            raise TypeError("Invalid argument %r for ensure_string()" % (s, ))
 
     def byte(n):
         # assume n is a Latin-1 string of length 1
@@ -132,31 +132,6 @@ if PY3:
     def hexadigits(s):
         # s needs to be a byte string.
         return [format(x, "02x") for x in s]
-
-    if sys.version_info >= (3, 1, 0):
-        # encodestring and decodestring has been deprecated since 3.1.0
-        def base64_encode_string(*args, **kwargs):
-            return base64.encodebytes(*args, **kwargs)  # NOQA
-
-        def base64_decode_string(*args, **kwargs):
-            return base64.decodebytes(*args, **kwargs)  # NOQA
-    else:
-        def base64_encode_string(*args, **kwargs):
-            return base64.encodestring(*args, **kwargs)
-
-        def base64_decode_string(*args, **kwargs):
-            return base64.decodestring(*args, **kwargs)
-
-    def assertRaisesRegex(self, *args, **kwargs):
-        if not isinstance(self, unittest.TestCase):
-            raise ValueError('First argument "self" needs to be an instance '
-                             'of unittest.TestCase')
-        return getattr(self, 'assertRaisesRegex')(*args, **kwargs)
-
-    def assertRegex(self, *args, **kwargs):
-        if not isinstance(self, unittest.TestCase):
-            raise ValueError('First argument "self" needs to be an instance '
-                             'of unittest.TestCase')
 
         return getattr(self, 'assertRegex')(*args, **kwargs)
 else:

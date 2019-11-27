@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 try:
     import OpenSSL
     OpenSSL
@@ -78,20 +77,29 @@ class NttCisLBDriver(Driver):
         'REQUIRES_SUPPORT': State.ERROR
     }
 
-    def __init__(self, key, network_domain_id, secret=None, secure=True,
-                 host=None, port=None, api_version=None,
-                 region=DEFAULT_REGION, **kwargs):
+    def __init__(self,
+                 key,
+                 network_domain_id,
+                 secret=None,
+                 secure=True,
+                 host=None,
+                 port=None,
+                 api_version=None,
+                 region=DEFAULT_REGION,
+                 **kwargs):
 
         self.network_domain_id = network_domain_id
 
         if region not in API_ENDPOINTS and host is None:
-            raise ValueError(
-                'Invalid region: %s, no host specified' % (region))
+            raise ValueError('Invalid region: %s, no host specified' %
+                             (region))
         if region is not None:
             self.selected_region = API_ENDPOINTS[region]
 
-        super(NttCisLBDriver, self).__init__(key=key, secret=secret,
-                                             secure=secure, host=host,
+        super(NttCisLBDriver, self).__init__(key=key,
+                                             secret=secret,
+                                             secure=secure,
+                                             host=host,
                                              port=port,
                                              api_version=api_version,
                                              region=region,
@@ -102,13 +110,17 @@ class NttCisLBDriver(Driver):
             Add the region to the kwargs before the connection is instantiated
         """
 
-        kwargs = super(NttCisLBDriver,
-                       self)._ex_connection_class_kwargs()
+        kwargs = super(NttCisLBDriver, self)._ex_connection_class_kwargs()
         kwargs['region'] = self.selected_region
         return kwargs
 
-    def create_balancer(self, name, listener_port=None, port=None,
-                        protocol=None, algorithm=None, members=None,
+    def create_balancer(self,
+                        name,
+                        listener_port=None,
+                        port=None,
+                        protocol=None,
+                        algorithm=None,
+                        members=None,
                         optimization_profile="TCP",
                         ex_listener_ip_address=None):
         """
@@ -173,10 +185,7 @@ class NttCisLBDriver(Driver):
                         name=member.name,
                         ip=member.private_ips[0],
                         ex_description=None)
-                self.ex_create_pool_member(
-                    pool=pool,
-                    node=member,
-                    port=port)
+                self.ex_create_pool_member(pool=pool, node=member, port=port)
 
         # Create the virtual listener (balancer)
         listener = self.ex_create_virtual_listener(
@@ -189,17 +198,17 @@ class NttCisLBDriver(Driver):
             optimization_profile=optimization_profile,
             listener_ip_address=ex_listener_ip_address)
 
-        return LoadBalancer(
-            id=listener.id,
-            name=listener.name,
-            state=State.RUNNING,
-            ip=listener.ip,
-            port=port,
-            driver=self,
-            extra={'pool_id': pool.id,
-                   'network_domain_id': network_domain_id,
-                   'listener_ip_address': ex_listener_ip_address}
-        )
+        return LoadBalancer(id=listener.id,
+                            name=listener.name,
+                            state=State.RUNNING,
+                            ip=listener.ip,
+                            port=port,
+                            driver=self,
+                            extra={
+                                'pool_id': pool.id,
+                                'network_domain_id': network_domain_id,
+                                'listener_ip_address': ex_listener_ip_address
+                            })
 
     def ex_update_listener(self, virtual_listener, **kwargs):
         """
@@ -207,12 +216,13 @@ class NttCisLBDriver(Driver):
         :param virtual_listener: The listener to be updated
         :return: The edited version of the listener
         """
-        edit_listener_elm = ET.Element('editVirtualListener',
-                                       {'xmlns': TYPES_URN,
-                                        'id': virtual_listener.id,
-                                        'xmlns:xsi':
-                                            "http://www.w3.org/2001/"
-                                            "XMLSchema-instance"})
+        edit_listener_elm = ET.Element(
+            'editVirtualListener', {
+                'xmlns': TYPES_URN,
+                'id': virtual_listener.id,
+                'xmlns:xsi': "http://www.w3.org/2001/"
+                "XMLSchema-instance"
+            })
         for k, v in kwargs.items():
             if v is None:
                 ET.SubElement(edit_listener_elm, k, {'xsi:nil': 'true'})
@@ -244,9 +254,8 @@ class NttCisLBDriver(Driver):
             params = {"networkDomainId": ex_network_domain_id}
 
         return self._to_balancers(
-            self.connection
-                .request_with_orgId_api_2('networkDomainVip/virtualListener',
-                                          params=params).object)
+            self.connection.request_with_orgId_api_2(
+                'networkDomainVip/virtualListener', params=params).object)
 
     def get_balancer(self, balancer_id):
         """
@@ -289,13 +298,12 @@ class NttCisLBDriver(Driver):
         pool_members = self.ex_get_pool_members(balancer.extra['pool_id'])
         members = []
         for pool_member in pool_members:
-            members.append(Member(
-                id=pool_member.id,
-                ip=pool_member.ip,
-                port=pool_member.port,
-                balancer=balancer,
-                extra=None
-            ))
+            members.append(
+                Member(id=pool_member.id,
+                       ip=pool_member.ip,
+                       port=pool_member.port,
+                       balancer=balancer,
+                       extra=None))
         return members
 
     def balancer_attach_member(self, balancer, member):
@@ -315,15 +323,13 @@ class NttCisLBDriver(Driver):
             network_domain_id=balancer.extra['network_domain_id'],
             name='Member.' + member.ip,
             ip=member.ip,
-            ex_description=''
-        )
+            ex_description='')
         if node is False:
             return False
         pool = self.ex_get_pool(balancer.extra['pool_id'])
-        pool_member = self.ex_create_pool_member(
-            pool=pool,
-            node=node,
-            port=member.port)
+        pool_member = self.ex_create_pool_member(pool=pool,
+                                                 node=node,
+                                                 port=member.port)
         member.id = pool_member.id
         return member
 
@@ -340,8 +346,10 @@ class NttCisLBDriver(Driver):
         :return: ``True`` if member detach was successful, otherwise ``False``.
         :rtype: ``bool``
         """
-        create_pool_m = ET.Element('removePoolMember', {'xmlns': TYPES_URN,
-                                                        'id': member.id})
+        create_pool_m = ET.Element('removePoolMember', {
+            'xmlns': TYPES_URN,
+            'id': member.id
+        })
 
         result = self.connection.request_with_orgId_api_2(
             'networkDomainVip/removePoolMember',
@@ -360,9 +368,10 @@ class NttCisLBDriver(Driver):
         :return: ``True`` if the destroy was successful, otherwise ``False``.
         :rtype: ``bool``
         """
-        delete_listener = ET.Element('deleteVirtualListener',
-                                     {'xmlns': TYPES_URN,
-                                      'id': balancer.id})
+        delete_listener = ET.Element('deleteVirtualListener', {
+            'xmlns': TYPES_URN,
+            'id': balancer.id
+        })
 
         result = self.connection.request_with_orgId_api_2(
             'networkDomainVip/deleteVirtualListener',
@@ -424,14 +433,12 @@ class NttCisLBDriver(Driver):
             if info.get('name') == 'nodeName':
                 node_name = info.get('value')
 
-        return NttCisPoolMember(
-            id=member_id,
-            name=node_name,
-            status=State.RUNNING,
-            ip=node.ip,
-            port=port,
-            node_id=node.id
-        )
+        return NttCisPoolMember(id=member_id,
+                                name=node_name,
+                                status=State.RUNNING,
+                                ip=node.ip,
+                                port=port,
+                                node_id=node.id)
 
     def ex_create_node(self,
                        network_domain_id,
@@ -491,12 +498,10 @@ class NttCisLBDriver(Driver):
                 node_id = info.get('value')
             if info.get('name') == 'name':
                 node_name = info.get('value')
-        return NttCisVIPNode(
-            id=node_id,
-            name=node_name,
-            status=State.RUNNING,
-            ip=ip
-        )
+        return NttCisVIPNode(id=node_id,
+                             name=node_name,
+                             status=State.RUNNING,
+                             ip=ip)
 
     def ex_update_node(self, node):
         """
@@ -614,16 +619,14 @@ class NttCisLBDriver(Driver):
             if info.get('name') == 'poolId':
                 pool_id = info.get('value')
 
-        return NttCisPool(
-            id=pool_id,
-            name=name,
-            description=ex_description,
-            status=State.RUNNING,
-            load_balance_method=str(balancer_method),
-            health_monitor_id=None,
-            service_down_action=service_down_action,
-            slow_ramp_time=str(slow_ramp_time)
-        )
+        return NttCisPool(id=pool_id,
+                          name=name,
+                          description=ex_description,
+                          status=State.RUNNING,
+                          load_balance_method=str(balancer_method),
+                          health_monitor_id=None,
+                          service_down_action=service_down_action,
+                          slow_ramp_time=str(slow_ramp_time))
 
     def ex_create_virtual_listener(self,
                                    network_domain_id,
@@ -758,15 +761,16 @@ class NttCisLBDriver(Driver):
             if info.get('name') == 'listenerIpAddress':
                 virtual_listener_ip = info.get('value')
 
-        return NttCisVirtualListener(
-            id=virtual_listener_id,
-            name=name,
-            ip=virtual_listener_ip,
-            status=State.RUNNING
-        )
+        return NttCisVirtualListener(id=virtual_listener_id,
+                                     name=name,
+                                     ip=virtual_listener_ip,
+                                     status=State.RUNNING)
 
-    def ex_import_ssl_domain_certificate(self, network_domain_id,
-                                         name, crt_file, key_file,
+    def ex_import_ssl_domain_certificate(self,
+                                         network_domain_id,
+                                         name,
+                                         crt_file,
+                                         key_file,
                                          description=None):
         """
         Import an ssl cert for ssl offloading onto the the load balancer
@@ -783,18 +787,12 @@ class NttCisLBDriver(Driver):
         :type `description: `str``
         :return: ``bool``
         """
-
-        with open(crt_file) as fp:
-            c = OpenSSL.crypto.load_certificate(
-                OpenSSL.crypto.FILETYPE_PEM, fp.read())
-
-        cert = OpenSSL.crypto.dump_certificate(
-            OpenSSL.crypto.FILETYPE_PEM, c).decode(encoding='utf-8')
-
-        with open(key_file) as fp:
-            k = OpenSSL.crypto.load_privatekey(
-                OpenSSL.crypto.FILETYPE_PEM, fp.read())
-
+        c = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM,
+                                            open(crt_file).read())
+        cert = OpenSSL.crypto.dump_certificate(OpenSSL.crypto.FILETYPE_PEM,
+                                               c).decode(encoding='utf-8')
+        k = OpenSSL.crypto.load_privatekey(OpenSSL.crypto.FILETYPE_PEM,
+                                           open(key_file).read())
         key = OpenSSL.crypto.dump_privatekey(OpenSSL.crypto.FILETYPE_PEM, k) \
             .decode(encoding='utf-8')
         cert_elem = ET.Element("importSslDomainCertificate",
@@ -820,9 +818,10 @@ class NttCisLBDriver(Driver):
         :type dom_cert_id: ``str``
         :return: ``bool``
         """
-        del_dom_cert_elem = ET.Element("deleteSslDomainCertificate",
-                                       {"id": dom_cert_id,
-                                        "xmlns": TYPES_URN})
+        del_dom_cert_elem = ET.Element("deleteSslDomainCertificate", {
+            "id": dom_cert_id,
+            "xmlns": TYPES_URN
+        })
         result = self.connection.request_with_orgId_api_2(
             'networkDomainVip/deleteSslDomainCertificate',
             method='POST',
@@ -830,8 +829,11 @@ class NttCisLBDriver(Driver):
         response_code = findtext(result, 'responseCode', TYPES_URN)
         return response_code in ['IN_PROGRESS', 'OK']
 
-    def ex_import_ssl_cert_chain(self, network_domain_id, name,
-                                 chain_crt_file, description=None):
+    def ex_import_ssl_cert_chain(self,
+                                 network_domain_id,
+                                 name,
+                                 chain_crt_file,
+                                 description=None):
         """
         Import an ssl certificate chain for ssl offloading onto
         the the load balancer
@@ -846,10 +848,10 @@ class NttCisLBDriver(Driver):
         :type description: ``str``
         :return: ``bool``
         """
-        c = crypto.load_certificate(
-            crypto.FILETYPE_PEM, open(chain_crt_file).read())
-        cert = OpenSSL.crypto.dump_certificate(
-            crypto.FILETYPE_PEM, c).decode(encoding='utf-8')
+        c = crypto.load_certificate(crypto.FILETYPE_PEM,
+                                    open(chain_crt_file).read())
+        cert = OpenSSL.crypto.dump_certificate(crypto.FILETYPE_PEM,
+                                               c).decode(encoding='utf-8')
         cert_chain_elem = ET.Element("importSslCertificateChain",
                                      {"xmlns": TYPES_URN})
         ET.SubElement(cert_chain_elem, "networkDomainId") \
@@ -873,9 +875,10 @@ class NttCisLBDriver(Driver):
         :type cert_chain_id: ``str``
         :return ``bool``
         """
-        del_cert_chain_elem = ET.Element("deleteSslCertificateChain",
-                                         {"id": cert_chain_id,
-                                          "xmlns": TYPES_URN})
+        del_cert_chain_elem = ET.Element("deleteSslCertificateChain", {
+            "id": cert_chain_id,
+            "xmlns": TYPES_URN
+        })
         result = self.connection.request_with_orgId_api_2(
             "networkDomainVip/deleteSslCertificateChain",
             method="POST",
@@ -883,8 +886,10 @@ class NttCisLBDriver(Driver):
         response_code = findtext(result, 'responseCode', TYPES_URN)
         return response_code in ['IN_PROGRESS', 'OK']
 
-    def ex_create_ssl_offload_profile(self, netowrk_domain_id,
-                                      name, ssl_domain_cert_id,
+    def ex_create_ssl_offload_profile(self,
+                                      netowrk_domain_id,
+                                      name,
+                                      ssl_domain_cert_id,
                                       description=None,
                                       ciphers=None,
                                       ssl_cert_chain_id=None):
@@ -932,8 +937,10 @@ class NttCisLBDriver(Driver):
         response_code = findtext(result, 'responseCode', TYPES_URN)
         return response_code in ['IN_PROGRESS', 'OK']
 
-    def ex_edit_ssl_offload_profile(self, profile_id,
-                                    name, ssl_domain_cert_id,
+    def ex_edit_ssl_offload_profile(self,
+                                    profile_id,
+                                    name,
+                                    ssl_domain_cert_id,
                                     description=None,
                                     ciphers=None,
                                     ssl_cert_chain_id=None):
@@ -955,8 +962,10 @@ class NttCisLBDriver(Driver):
         :type: ssl_cert_chain_id: ``str``
         :returns: ``bool``
         """
-        ssl_offload_elem = ET.Element("editSslOffloadProfile",
-                                      {"xmlns": TYPES_URN, "id": profile_id})
+        ssl_offload_elem = ET.Element("editSslOffloadProfile", {
+            "xmlns": TYPES_URN,
+            "id": profile_id
+        })
         ET.SubElement(ssl_offload_elem, "name").text = name
         if description is not None:
             ET.SubElement(ssl_offload_elem, "description").text = description
@@ -982,8 +991,10 @@ class NttCisLBDriver(Driver):
         :type profile_id: ``str``
         :returns: ``bool``
         """
-        del_profile_elem = ET.Element("deleteSslOffloadProfile",
-                                      {"id": profile_id, "xmlns": TYPES_URN})
+        del_profile_elem = ET.Element("deleteSslOffloadProfile", {
+            "id": profile_id,
+            "xmlns": TYPES_URN
+        })
         result = self.connection.request_with_orgId_api_2(
             "networkDomainVip/deleteSslOffloadProfile",
             method="POST",
@@ -1069,9 +1080,10 @@ class NttCisLBDriver(Driver):
         :return: ``True`` for success, ``False`` for failure
         :rtype: ``bool``
         """
-        destroy_request = ET.Element('deletePool',
-                                     {'xmlns': TYPES_URN,
-                                      'id': pool.id})
+        destroy_request = ET.Element('deletePool', {
+            'xmlns': TYPES_URN,
+            'id': pool.id
+        })
 
         result = self.connection.request_with_orgId_api_2(
             action='networkDomainVip/deletePool',
@@ -1111,9 +1123,10 @@ class NttCisLBDriver(Driver):
         return self._to_member(member)
 
     def ex_set_pool_member_state(self, member, enabled=True):
-        request = ET.Element('editPoolMember',
-                             {'xmlns': TYPES_URN,
-                              'id': member.id})
+        request = ET.Element('editPoolMember', {
+            'xmlns': TYPES_URN,
+            'id': member.id
+        })
         state = "ENABLED" if enabled is True else "DISABLED"
         ET.SubElement(request, 'status').text = state
 
@@ -1139,9 +1152,10 @@ class NttCisLBDriver(Driver):
         :rtype: ``bool``
         """
         # remove the pool member
-        destroy_request = ET.Element('removePoolMember',
-                                     {'xmlns': TYPES_URN,
-                                      'id': member.id})
+        destroy_request = ET.Element('removePoolMember', {
+            'xmlns': TYPES_URN,
+            'id': member.id
+        })
 
         result = self.connection.request_with_orgId_api_2(
             action='networkDomainVip/removePoolMember',
@@ -1198,9 +1212,10 @@ class NttCisLBDriver(Driver):
         :rtype: ``bool``
         """
         # Destroy the node
-        destroy_request = ET.Element('deleteNode',
-                                     {'xmlns': TYPES_URN,
-                                      'id': node_id})
+        destroy_request = ET.Element('deleteNode', {
+            'xmlns': TYPES_URN,
+            'id': node_id
+        })
 
         result = self.connection.request_with_orgId_api_2(
             action='networkDomainVip/deleteNode',
@@ -1209,8 +1224,13 @@ class NttCisLBDriver(Driver):
         response_code = findtext(result, 'responseCode', TYPES_URN)
         return response_code in ['IN_PROGRESS', 'OK']
 
-    def ex_wait_for_state(self, state, func, poll_interval=2,
-                          timeout=60, *args, **kwargs):
+    def ex_wait_for_state(self,
+                          state,
+                          func,
+                          poll_interval=2,
+                          timeout=60,
+                          *args,
+                          **kwargs):
         """
         Wait for the function which returns a instance
         with field status to match
@@ -1249,7 +1269,9 @@ class NttCisLBDriver(Driver):
         """
         result = self.connection.request_with_orgId_api_2(
             action='networkDomainVip/defaultHealthMonitor',
-            params={'networkDomainId': network_domain},
+            params={
+                'networkDomainId': network_domain
+            },
             method='GET').object
         return self._to_health_monitors(result)
 
@@ -1264,7 +1286,9 @@ class NttCisLBDriver(Driver):
         """
         result = self.connection.request_with_orgId_api_2(
             action='networkDomainVip/defaultPersistenceProfile',
-            params={'networkDomainId': network_domain_id},
+            params={
+                'networkDomainId': network_domain_id
+            },
             method='GET').object
         return self._to_persistence_profiles(result)
 
@@ -1279,7 +1303,9 @@ class NttCisLBDriver(Driver):
         """
         result = self.connection.request_with_orgId_api_2(
             action='networkDomainVip/defaultIrule',
-            params={'networkDomainId': network_domain_id},
+            params={
+                'networkDomainId': network_domain_id
+            },
             method='GET').object
         return self._to_irules(result)
 
@@ -1387,8 +1413,7 @@ class NttCisLBDriver(Driver):
 
     def _to_irules(self, object):
         irules = []
-        matches = object.findall(
-            fixxpath('defaultIrule', TYPES_URN))
+        matches = object.findall(fixxpath('defaultIrule', TYPES_URN))
         for element in matches:
             irules.append(self._to_irule(element))
         return irules
@@ -1403,11 +1428,9 @@ class NttCisLBDriver(Driver):
                     type=match_element.get('type'),
                     protocol=match_element.get('protocol', None)))
         irule_element = element.find(fixxpath('irule', TYPES_URN))
-        return NttCisDefaultiRule(
-            id=irule_element.get('id'),
-            name=irule_element.get('name'),
-            compatible_listeners=compatible
-        )
+        return NttCisDefaultiRule(id=irule_element.get('id'),
+                                  name=irule_element.get('name'),
+                                  compatible_listeners=compatible)
 
     def _to_persistence_profiles(self, object):
         profiles = []
@@ -1432,8 +1455,7 @@ class NttCisLBDriver(Driver):
             fallback_compatible=bool(
                 element.get('fallbackCompatible') == "true"),
             name=findtext(element, 'name', TYPES_URN),
-            compatible_listeners=compatible
-        )
+            compatible_listeners=compatible)
 
     def _to_health_monitors(self, object):
         monitors = []
@@ -1475,11 +1497,10 @@ class NttCisLBDriver(Driver):
             id=element.get('id'),
             name=name,
             status=self._VALUE_TO_STATE_MAP.get(
-                findtext(element, 'state', TYPES_URN),
-                State.UNKNOWN),
+                findtext(element, 'state', TYPES_URN), State.UNKNOWN),
             health_monitor=hm,
-            connection_rate_limit=findtext(element,
-                                           'connectionRateLimit', TYPES_URN),
+            connection_rate_limit=findtext(element, 'connectionRateLimit',
+                                           TYPES_URN),
             connection_limit=findtext(element, 'connectionLimit', TYPES_URN),
             ip=ipaddress)
 
@@ -1498,9 +1519,7 @@ class NttCisLBDriver(Driver):
         port = findtext(element, 'port', TYPES_URN)
         extra = {}
 
-        pool_element = element.find(fixxpath(
-            'pool',
-            TYPES_URN))
+        pool_element = element.find(fixxpath('pool', TYPES_URN))
         if pool_element is None:
             extra['pool_id'] = None
 
@@ -1510,17 +1529,15 @@ class NttCisLBDriver(Driver):
         extra['network_domain_id'] = findtext(element, 'networkDomainId',
                                               TYPES_URN)
 
-        balancer = LoadBalancer(
-            id=element.get('id'),
-            name=name,
-            state=self._VALUE_TO_STATE_MAP.get(
-                findtext(element, 'state', TYPES_URN),
-                State.UNKNOWN),
-            ip=ipaddress,
-            port=port,
-            driver=self.connection.driver,
-            extra=extra
-        )
+        balancer = LoadBalancer(id=element.get('id'),
+                                name=name,
+                                state=self._VALUE_TO_STATE_MAP.get(
+                                    findtext(element, 'state', TYPES_URN),
+                                    State.UNKNOWN),
+                                ip=ipaddress,
+                                port=port,
+                                driver=self.connection.driver,
+                                extra=extra)
 
         return balancer
 
@@ -1537,18 +1554,11 @@ class NttCisLBDriver(Driver):
             port = int(port)
         pool_member = NttCisPoolMember(
             id=element.get('id'),
-            name=element.find(fixxpath(
-                'node',
-                TYPES_URN)).get('name'),
+            name=element.find(fixxpath('node', TYPES_URN)).get('name'),
             status=findtext(element, 'state', TYPES_URN),
-            node_id=element.find(fixxpath(
-                'node',
-                TYPES_URN)).get('id'),
-            ip=element.find(fixxpath(
-                'node',
-                TYPES_URN)).get('ipAddress'),
-            port=port
-        )
+            node_id=element.find(fixxpath('node', TYPES_URN)).get('id'),
+            ip=element.find(fixxpath('node', TYPES_URN)).get('ipAddress'),
+            port=port)
         return pool_member
 
     def _to_pools(self, object):
@@ -1575,8 +1585,8 @@ class NttCisLBDriver(Driver):
 
     def _to_certs(self, object):
         certs = []
-        for element in object.findall(fixxpath("sslDomainCertificate",
-                                               TYPES_URN)):
+        for element in object.findall(
+                fixxpath("sslDomainCertificate", TYPES_URN)):
             certs.append(self._to_cert(element))
         return certs
 
@@ -1585,8 +1595,8 @@ class NttCisLBDriver(Driver):
 
     def _to_certificate_chains(self, object):
         cert_chains = []
-        for element in object.findall(fixxpath("sslCertificateChain",
-                                               TYPES_URN)):
+        for element in object.findall(
+                fixxpath("sslCertificateChain", TYPES_URN)):
             cert_chains.append(self._to_certificate_chain(element))
         return cert_chains
 

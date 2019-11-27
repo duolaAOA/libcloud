@@ -5,10 +5,9 @@ from libcloud.common.base import JsonResponse
 from libcloud.common.base import ConnectionKey
 
 
-class MaxihostResponse(JsonResponse):
-    valid_response_codes = [
-        httplib.OK, httplib.ACCEPTED, httplib.CREATED, httplib.NO_CONTENT
-    ]
+class ClearAPIResponse(JsonResponse):
+    valid_response_codes = [httplib.OK, httplib.ACCEPTED, httplib.CREATED,
+                            httplib.NO_CONTENT]
 
     def parse_error(self):
         if self.status == httplib.UNAUTHORIZED:
@@ -26,13 +25,12 @@ class MaxihostResponse(JsonResponse):
         return self.status in self.valid_response_codes
 
 
-class MaxihostConnection(ConnectionKey):
+class ClearAPIConnection(ConnectionKey):
     """
-    Connection class for the Maxihost driver.
+    Connection class for the ClearVm driver.
     """
 
-    host = 'api.maxihost.com'
-    responseCls = MaxihostResponse
+    responseCls = ClearAPIResponse
 
     def add_default_headers(self, headers):
         """
@@ -40,7 +38,6 @@ class MaxihostConnection(ConnectionKey):
 
         This method adds apikey to the request.
         """
-        headers['Authorization'] = 'Bearer %s' % (self.key)
+        headers['X-Authorization'] = 'Bearer %s' % (self.key)
         headers['Content-Type'] = 'application/json'
-        headers['Accept'] = 'application/vnd.maxihost.v1.1+json'
         return headers

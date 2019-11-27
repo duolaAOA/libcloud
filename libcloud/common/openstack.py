@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """
 Common utilities for OpenStack
 """
@@ -30,7 +29,6 @@ from libcloud.common.openstack_identity import get_class_for_auth_version
 from libcloud.common.openstack_identity import (OpenStackServiceCatalog,
                                                 OpenStackIdentityTokenScope)
 
-
 try:
     import simplejson as json
 except ImportError:
@@ -40,24 +38,16 @@ AUTH_API_VERSION = '1.1'
 
 # Auth versions which contain token expiration information.
 AUTH_VERSIONS_WITH_EXPIRES = [
-    '1.1',
-    '2.0',
-    '2.0_apikey',
-    '2.0_password',
-    '3.x',
-    '3.x_password'
+    '1.1', '2.0', '2.0_apikey', '2.0_password', '3.x', '3.x_password'
 ]
 
 __all__ = [
-    'OpenStackBaseConnection',
-    'OpenStackResponse',
-    'OpenStackException',
+    'OpenStackBaseConnection', 'OpenStackResponse', 'OpenStackException',
     'OpenStackDriverMixin'
 ]
 
 
 class OpenStackBaseConnection(ConnectionUserAndKey):
-
     """
     Base class for OpenStack connections.
 
@@ -136,8 +126,14 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
     accept_format = None
     _auth_version = None
 
-    def __init__(self, user_id, key, secure=True,
-                 host=None, port=None, timeout=None, proxy_url=None,
+    def __init__(self,
+                 user_id,
+                 key,
+                 secure=True,
+                 host=None,
+                 port=None,
+                 timeout=None,
+                 proxy_url=None,
                  ex_force_base_url=None,
                  ex_force_auth_url=None,
                  ex_force_auth_version=None,
@@ -148,11 +144,19 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
                  ex_force_service_type=None,
                  ex_force_service_name=None,
                  ex_force_service_region=None,
-                 retry_delay=None, backoff=None):
-        super(OpenStackBaseConnection, self).__init__(
-            user_id, key, secure=secure, timeout=timeout,
-            retry_delay=retry_delay, backoff=backoff, proxy_url=proxy_url)
+                 retry_delay=None,
+                 backoff=None,
+                 ex_auth_url=None):
+        super(OpenStackBaseConnection, self).__init__(user_id,
+                                                      key,
+                                                      secure=secure,
+                                                      timeout=timeout,
+                                                      retry_delay=retry_delay,
+                                                      backoff=backoff,
+                                                      proxy_url=proxy_url)
 
+        if ex_auth_url:
+            self.auth_url = ex_auth_url
         if ex_force_auth_version:
             self._auth_version = ex_force_auth_version
 
@@ -206,8 +210,13 @@ class OpenStackBaseConnection(ConnectionUserAndKey):
 
         return self._osa
 
-    def request(self, action, params=None, data='', headers=None,
-                method='GET', raw=False):
+    def request(self,
+                action,
+                params=None,
+                data='',
+                headers=None,
+                method='GET',
+                raw=False):
         headers = headers or {}
         params = params or {}
 
@@ -361,19 +370,17 @@ class OpenStackResponse(Response):
             try:
                 return ET.XML(self.body)
             except Exception:
-                raise MalformedResponseError(
-                    'Failed to parse XML',
-                    body=self.body,
-                    driver=self.node_driver)
+                raise MalformedResponseError('Failed to parse XML',
+                                             body=self.body,
+                                             driver=self.node_driver)
 
         elif self.has_content_type('application/json'):
             try:
                 return json.loads(self.body)
             except Exception:
-                raise MalformedResponseError(
-                    'Failed to parse JSON',
-                    body=self.body,
-                    driver=self.node_driver)
+                raise MalformedResponseError('Failed to parse JSON',
+                                             body=self.body,
+                                             driver=self.node_driver)
         else:
             return self.body
 
@@ -382,22 +389,21 @@ class OpenStackResponse(Response):
         body = self.parse_body()
 
         if self.has_content_type('application/xml'):
-            text = '; '.join([err.text or '' for err in body.getiterator()
-                              if err.text])
+            text = '; '.join(
+                [err.text or '' for err in body.getiterator() if err.text])
         elif self.has_content_type('application/json'):
             values = list(body.values())
 
             context = self.connection.context
             driver = self.connection.driver
             key_pair_name = context.get('key_pair_name', None)
-
-            if len(values) > 0 and 'code' in values[0] and \
-                    values[0]['code'] == 404 and key_pair_name:
+            if len(values) > 0 and hasattr(values[0], 'get') and \
+                values[0].get('code') == 404 and key_pair_name:
                 raise KeyPairDoesNotExistError(name=key_pair_name,
                                                driver=driver)
             elif len(values) > 0 and 'message' in values[0]:
-                text = ';'.join([fault_data['message'] for fault_data
-                                 in values])
+                text = ';'.join(
+                    [fault_data['message'] for fault_data in values])
             else:
                 text = body
         else:
@@ -411,7 +417,6 @@ class OpenStackResponse(Response):
 
 
 class OpenStackDriverMixin(object):
-
     def __init__(self,
                  ex_force_base_url=None,
                  ex_force_auth_url=None,
@@ -422,7 +427,11 @@ class OpenStackDriverMixin(object):
                  ex_tenant_name=None,
                  ex_force_service_type=None,
                  ex_force_service_name=None,
-                 ex_force_service_region=None, *args, **kwargs):
+                 ex_force_service_region=None,
+                 ex_auth_url=None,
+                 *args,
+                 **kwargs):
+        self._ex_auth_url = ex_auth_url
         self._ex_force_base_url = ex_force_base_url
         self._ex_force_auth_url = ex_force_auth_url
         self._ex_force_auth_version = ex_force_auth_version
@@ -461,4 +470,6 @@ class OpenStackDriverMixin(object):
             rv['ex_force_service_name'] = self._ex_force_service_name
         if self._ex_force_service_region:
             rv['ex_force_service_region'] = self._ex_force_service_region
+        if self._ex_auth_url:
+            rv['ex_auth_url'] = self._ex_auth_url
         return rv

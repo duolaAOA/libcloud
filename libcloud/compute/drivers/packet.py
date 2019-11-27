@@ -20,7 +20,6 @@ try:  # Try to use asyncio to perform requests in parallel across projects
 except ImportError:  # If not available will do things serially
     asyncio = None
 
-
 import datetime
 import json
 
@@ -37,8 +36,9 @@ PACKET_ENDPOINT = "api.packet.net"
 
 
 class PacketResponse(JsonResponse):
-    valid_response_codes = [httplib.OK, httplib.ACCEPTED, httplib.CREATED,
-                            httplib.NO_CONTENT]
+    valid_response_codes = [
+        httplib.OK, httplib.ACCEPTED, httplib.CREATED, httplib.NO_CONTENT
+    ]
 
     def parse_error(self):
         if self.status == httplib.UNAUTHORIZED:
@@ -87,66 +87,36 @@ class PacketNodeDriver(NodeDriver):
     name = 'Packet'
     website = 'http://www.packet.com/'
 
-    NODE_STATE_MAP = {'queued': NodeState.PENDING,
-                      'provisioning': NodeState.PENDING,
-                      'rebuilding': NodeState.PENDING,
-                      'powering_on': NodeState.REBOOTING,
-                      'powering_off': NodeState.REBOOTING,
-                      'rebooting': NodeState.REBOOTING,
-                      'inactive': NodeState.STOPPED,
-                      'deleted': NodeState.TERMINATED,
-                      'deprovisioning': NodeState.TERMINATED,
-                      'failed': NodeState.ERROR,
-                      'active': NodeState.RUNNING}
+    NODE_STATE_MAP = {
+        'queued': NodeState.PENDING,
+        'provisioning': NodeState.PENDING,
+        'rebuilding': NodeState.PENDING,
+        'powering_on': NodeState.REBOOTING,
+        'powering_off': NodeState.REBOOTING,
+        'rebooting': NodeState.REBOOTING,
+        'inactive': NodeState.STOPPED,
+        'deleted': NodeState.TERMINATED,
+        'deprovisioning': NodeState.TERMINATED,
+        'failed': NodeState.ERROR,
+        'active': NodeState.RUNNING
+    }
 
     def __init__(self, key, project=None):
-        """
-        Initialize a NodeDriver for Packet using the API token
-        and optionally the project (name or id).
-
-        If project name is specified we validate it lazily and populate
-        self.project_id during the first access of self.projects variable
-        """
-        super(PacketNodeDriver, self).__init__(key=key)
-
+        # initialize a NodeDriver for Packet using the API token
+        # and optionally the project (name or id)
+        # If project specified we need to be sure this is a valid project
+        # so we create the variable self.project_id
+        super(PacketNodeDriver, self).__init__(key=key, project=None)
         self.project_name = project
         self.project_id = None
-
-        # Lazily populated on first access to self.project
-        self._project = project
-
-        # Variable which indicates if self._projects has been populated yet and
-        # has been called self._project validated
-        self._projects_populated = False
-        self._projects = None
-
-    @property
-    def projects(self):
-        """
-        Lazily retrieve projects and set self.project_id variable on initial
-        access to self.projects variable.
-        """
-        if not self._projects_populated:
-            # NOTE: Each Packet account needs at least one project, but to be
-            # on the safe side and avoid infinite loop in case there are no
-            # projects on the account, we don't use a more robust way to
-            # determine if project list has been populated yet
-            self._projects = self.ex_list_projects()
-            self._projects_populated = True
-
-            # If project name is specified, verify it's valid and populate
-            # self.project_id
-            if self._project:
-                for project_obj in self._projects:
-                    if self._project in [project_obj.name, project_obj.id]:
-                        self.project_id = project_obj.id
-                        break
-
-                if not self.project_id:
-                    # Invalid project name
-                    self.project_name = None
-
-        return self._projects
+        self.projects = self.ex_list_projects()
+        if project:
+            for project_obj in self.projects:
+                if project in [project_obj.name, project_obj.id]:
+                    self.project_id = project_obj.id
+                    break
+            if not self.project_id:
+                self.project_name = None
 
     def ex_list_projects(self):
         projects = []
@@ -158,21 +128,19 @@ class PacketNodeDriver(NodeDriver):
 
     def list_nodes(self, ex_project_id=None):
         if ex_project_id:
-            return self.ex_list_nodes_for_project(ex_project_id=ex_project_id)
+            return self.list_nodes_for_project(ex_project_id=ex_project_id)
 
         # if project has been specified during driver initialization, then
         # return nodes for this project only
         if self.project_id:
-            return self.ex_list_nodes_for_project(
-                ex_project_id=self.project_id)
+            return self.list_nodes_for_project(ex_project_id=self.project_id)
 
         # In case of Python2 perform requests serially
         if asyncio is None:
             nodes = []
             for project in self.projects:
                 nodes.extend(
-                    self.ex_list_nodes_for_project(ex_project_id=project.id)
-                )
+                    self.list_nodes_for_project(ex_project_id=project.id))
             return nodes
         # In case of Python3 use asyncio to perform requests in parallel
         return self.list_resources_async('nodes')
@@ -185,14 +153,15 @@ class PacketNodeDriver(NodeDriver):
         assert resource_type in ['nodes', 'volumes']
         glob = globals()
         loc = locals()
-        exec("""
+        exec(
+            """
 import asyncio
 @asyncio.coroutine
 def _list_async(driver):
     projects = [project.id for project in driver.projects]
     loop = asyncio.get_event_loop()
     futures = [
-        loop.run_in_executor(None, driver.ex_list_%s_for_project, p)
+        loop.run_in_executor(None, driver.list_%s_for_project, p)
         for p in projects
     ]
     retval = []
@@ -203,16 +172,15 @@ def _list_async(driver):
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(loc['_list_async'](loc['self']))
 
-    def ex_list_nodes_for_project(self, ex_project_id, include='plan', page=1,
-                                  per_page=1000):
-        params = {
-            'include': include,
-            'page': page,
-            'per_page': per_page
-        }
-        data = self.connection.request(
-            '/projects/%s/devices' % (ex_project_id),
-            params=params).object['devices']
+    def list_nodes_for_project(self,
+                               ex_project_id,
+                               include='plan',
+                               page=1,
+                               per_page=1000):
+        params = {'include': include, 'page': page, 'per_page': per_page}
+        data = self.connection.request('/projects/%s/devices' %
+                                       (ex_project_id),
+                                       params=params).object['devices']
         return list(map(self._to_node, data))
 
     def list_locations(self):
@@ -225,13 +193,29 @@ def _list_async(driver):
             .object['operating_systems']
         return list(map(self._to_image, data))
 
-    def list_sizes(self):
-        data = self.connection.request('/plans').object['plans']
-        return [self._to_size(size) for size in data if
-                size.get('line') == 'baremetal']
+    def list_sizes(self, ex_project_id=None):
+        project_id = ex_project_id or self.project_id or (len(
+            self.projects) and self.projects[0].id)
+        if project_id:
+            data = self.connection.request('/projects/%s/plans' %
+                                           project_id).object['plans']
+        else:  # This only works with personal tokens
+            data = self.connection.request('/plans').object['plans']
+        return [
+            self._to_size(size) for size in data
+            if size.get('line') == 'baremetal'
+        ]
 
-    def create_node(self, name, size, image, location,
-                    ex_project_id=None, ip_addresses=[], cloud_init=None,
+    def create_node(self,
+                    name,
+                    size,
+                    image,
+                    location,
+                    ex_project_id=None,
+                    ip_addresses=[],
+                    cloud_init=None,
+                    disk=None,
+                    disk_size=0,
                     **kwargs):
         """
         Create a node.
@@ -241,7 +225,6 @@ def _list_async(driver):
         """
         # if project has been specified on initialization of driver, then
         # create on this project
-
         if self.project_id:
             ex_project_id = self.project_id
         else:
@@ -249,16 +232,22 @@ def _list_async(driver):
                 raise Exception('ex_project_id needs to be specified')
 
         facility = location.extra['code']
-        params = {'hostname': name, 'plan': size.id,
-                  'operating_system': image.id, 'facility': facility,
-                  'include': 'plan', 'billing_cycle': 'hourly',
-                  'ip_addresses': ip_addresses}
+        params = {
+            'hostname': name,
+            'plan': size.id,
+            'operating_system': image.id,
+            'facility': facility,
+            'include': 'plan',
+            'billing_cycle': 'hourly',
+            'ip_addresses': ip_addresses
+        }
         params.update(kwargs)
         if cloud_init:
             params["userdata"] = cloud_init
         data = self.connection.request('/projects/%s/devices' %
                                        (ex_project_id),
-                                       data=json.dumps(params), method='POST')
+                                       data=json.dumps(params),
+                                       method='POST')
 
         status = data.object.get('status', 'OK')
         if status == 'ERROR':
@@ -266,30 +255,32 @@ def _list_async(driver):
             error_message = data.object.get('error_message', message)
             raise ValueError('Failed to create node: %s' % (error_message))
         node = self._to_node(data=data.object)
-        if kwargs.get('disk'):
-            self.attach_volume(node, kwargs.get('disk'))
-        if kwargs.get('disk_size'):
-            volume = self.create_volume(size=kwargs.get('disk_size'),
-                                        location=location)
+        if disk:
+            self.attach_volume(node, disk)
+        if disk_size:
+            volume = self.create_volume(size=disk_size, location=location)
             self.attach_volume(node, volume)
         return node
 
     def reboot_node(self, node):
         params = {'type': 'reboot'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
-                                      params=params, method='POST')
+                                      params=params,
+                                      method='POST')
         return res.status == httplib.OK
 
     def ex_start_node(self, node):
         params = {'type': 'power_on'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
-                                      params=params, method='POST')
+                                      params=params,
+                                      method='POST')
         return res.status == httplib.OK
 
     def ex_stop_node(self, node):
         params = {'type': 'power_off'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
-                                      params=params, method='POST')
+                                      params=params,
+                                      method='POST')
         return res.status == httplib.OK
 
     def destroy_node(self, node):
@@ -300,13 +291,15 @@ def _list_async(driver):
     def ex_reinstall_node(self, node):
         params = {'type': 'reinstall'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
-                                      params=params, method='POST')
+                                      params=params,
+                                      method='POST')
         return res.status == httplib.OK
 
     def ex_rescue_node(self, node):
         params = {'type': 'rescue'}
         res = self.connection.request('/devices/%s/actions' % (node.id),
-                                      params=params, method='POST')
+                                      params=params,
+                                      method='POST')
         return res.status == httplib.OK
 
     def ex_update_node(self, node, **kwargs):
@@ -345,7 +338,8 @@ def _list_async(driver):
         :type       public_key: ``str``
         """
         params = {'label': name, 'key': public_key}
-        data = self.connection.request('/ssh-keys', method='POST',
+        data = self.connection.request('/ssh-keys',
+                                       method='POST',
                                        params=params).object
         return self._to_key_pairs(data)
 
@@ -363,9 +357,10 @@ def _list_async(driver):
 
     def _to_node(self, data):
         extra = {}
-        extra_keys = ['created_at', 'updated_at',
-                      'userdata', 'billing_cycle', 'locked',
-                      'iqn', 'locked', 'project', 'description']
+        extra_keys = [
+            'created_at', 'updated_at', 'userdata', 'billing_cycle', 'locked',
+            'iqn', 'locked', 'project', 'description'
+        ]
         if 'state' in data:
             state = self.NODE_STATE_MAP.get(data['state'], NodeState.UNKNOWN)
         else:
@@ -392,25 +387,39 @@ def _list_async(driver):
             if key in data:
                 extra[key] = data[key]
 
-        node = Node(id=data['id'], name=data['hostname'], state=state,
-                    public_ips=ips['public'], private_ips=ips['private'],
-                    size=size, image=image, extra=extra, driver=self)
+        node = Node(id=data['id'],
+                    name=data['hostname'],
+                    state=state,
+                    public_ips=ips['public'],
+                    private_ips=ips['private'],
+                    size=size,
+                    image=image,
+                    extra=extra,
+                    driver=self)
         return node
 
     def _to_image(self, data):
         extra = {'distro': data['distro'], 'version': data['version']}
-        return NodeImage(id=data['slug'], name=data['name'], extra=extra,
+        return NodeImage(id=data['slug'],
+                         name=data['name'],
+                         extra=extra,
                          driver=self)
 
     def _to_location(self, data):
         extra = data
-        return NodeLocation(id=data['id'], name=data['name'], country=None,
-                            driver=self, extra=extra)
+        return NodeLocation(id=data['id'],
+                            name=data['name'],
+                            country=None,
+                            driver=self,
+                            extra=extra)
 
     def _to_size(self, data):
         cpus = data['specs']['cpus'][0].get('count')
-        extra = {'description': data['description'], 'line': data['line'],
-                 'cpus': cpus}
+        extra = {
+            'description': data['description'],
+            'line': data['line'],
+            'cpus': cpus
+        }
 
         ram = data['specs']['memory']['total']
         disk = 0
@@ -421,14 +430,21 @@ def _list_async(driver):
             disk += disks['count'] * int(disk_size)
         name = "%s - %s RAM" % (data.get('name'), ram)
         price = data['pricing'].get('hour')
-        return NodeSize(id=data['slug'], name=name,
-                        ram=int(ram.replace('GB', '')) * 1024, disk=disk,
-                        bandwidth=0, price=price, extra=extra, driver=self)
+        return NodeSize(id=data['slug'],
+                        name=name,
+                        ram=int(ram.replace('GB', '')) * 1024,
+                        disk=disk,
+                        bandwidth=0,
+                        price=price,
+                        extra=extra,
+                        driver=self)
 
     def _to_key_pairs(self, data):
-        extra = {'label': data['label'],
-                 'created_at': data['created_at'],
-                 'updated_at': data['updated_at']}
+        extra = {
+            'label': data['label'],
+            'created_at': data['created_at'],
+            'updated_at': data['updated_at']
+        }
         return KeyPair(name=data['id'],
                        fingerprint=data['fingerprint'],
                        public_key=data['key'],
@@ -486,8 +502,8 @@ def _list_async(driver):
             projects = [p.id for p in self.projects]
         retval = []
         for p in projects:
-            retval.extend(self.ex_list_bgp_sessions_for_project(
-                p)['bgp_sessions'])
+            retval.extend(
+                self.ex_list_bgp_sessions_for_project(p)['bgp_sessions'])
         return retval
 
     def ex_create_bgp_session(self, node, address_family='ipv4'):
@@ -501,27 +517,22 @@ def _list_async(driver):
         res = self.connection.request(path, method='DELETE')
         return res.status == httplib.OK  # or res.status == httplib.NO_CONTENT
 
-    def ex_list_events_for_node(self, node, include=None,
-                                page=1, per_page=10):
+    def ex_list_events_for_node(self, node, include=None, page=1, per_page=10):
         path = '/devices/%s/events' % node.id
-        params = {
-            'include': include,
-            'page': page,
-            'per_page': per_page
-        }
+        params = {'include': include, 'page': page, 'per_page': per_page}
         return self.connection.request(path, params=params).object
 
-    def ex_list_events_for_project(self, project, include=None, page=1,
+    def ex_list_events_for_project(self,
+                                   project,
+                                   include=None,
+                                   page=1,
                                    per_page=10):
         path = '/projects/%s/events' % project.id
-        params = {
-            'include': include,
-            'page': page,
-            'per_page': per_page
-        }
+        params = {'include': include, 'page': page, 'per_page': per_page}
         return self.connection.request(path, params=params).object
 
-    def ex_describe_all_addresses(self, ex_project_id=None,
+    def ex_describe_all_addresses(self,
+                                  ex_project_id=None,
                                   only_associated=False):
         if ex_project_id:
             projects = [ex_project_id]
@@ -531,11 +542,13 @@ def _list_async(driver):
             projects = [p.id for p in self.projects]
         retval = []
         for project in projects:
-            retval.extend(self.ex_describe_all_addresses_for_project(
-                project, only_associated))
+            retval.extend(
+                self.ex_describe_all_addresses_for_project(
+                    project, only_associated))
         return retval
 
-    def ex_describe_all_addresses_for_project(self, ex_project_id,
+    def ex_describe_all_addresses_for_project(self,
+                                              ex_project_id,
                                               include=None,
                                               only_associated=False):
         """
@@ -554,8 +567,10 @@ def _list_async(driver):
             'include': include,
         }
         ip_addresses = self.connection.request(path, params=params).object
-        result = [a for a in ip_addresses.get('ip_addresses', [])
-                  if not only_associated or len(a.get('assignments', [])) > 0]
+        result = [
+            a for a in ip_addresses.get('ip_addresses', [])
+            if not only_associated or len(a.get('assignments', [])) > 0
+        ]
         return result
 
     def ex_describe_address(self, ex_address_id, include=None):
@@ -566,9 +581,12 @@ def _list_async(driver):
         result = self.connection.request(path, params=params).object
         return result
 
-    def ex_request_address_reservation(self, ex_project_id, location_id=None,
+    def ex_request_address_reservation(self,
+                                       ex_project_id,
+                                       location_id=None,
                                        address_family='global_ipv4',
-                                       quantity=1, comments='',
+                                       quantity=1,
+                                       comments='',
                                        customdata=''):
         path = '/projects/%s/ips' % ex_project_id
         params = {
@@ -581,11 +599,14 @@ def _list_async(driver):
             params['comments'] = comments
         if customdata:
             params['customdata'] = customdata
-        result = self.connection.request(
-            path, params=params, method='POST').object
+        result = self.connection.request(path, params=params,
+                                         method='POST').object
         return result
 
-    def ex_associate_address_with_node(self, node, address, manageable=False,
+    def ex_associate_address_with_node(self,
+                                       node,
+                                       address,
+                                       manageable=False,
                                        customdata=''):
         path = '/devices/%s/ips' % node.id
         params = {
@@ -593,8 +614,8 @@ def _list_async(driver):
             'manageable': manageable,
             'customdata': customdata
         }
-        result = self.connection.request(
-            path, params=params, method='POST').object
+        result = self.connection.request(path, params=params,
+                                         method='POST').object
         return result
 
     def ex_disassociate_address(self, address_uuid, include=None):
@@ -602,52 +623,58 @@ def _list_async(driver):
         params = {}
         if include:
             params['include'] = include
-        result = self.connection.request(
-            path, params=params, method='DELETE').object
+        result = self.connection.request(path, params=params,
+                                         method='DELETE').object
         return result
 
     def list_volumes(self, ex_project_id=None):
         if ex_project_id:
-            return self.ex_list_volumes_for_project(
-                ex_project_id=ex_project_id)
+            return self.list_volumes_for_project(ex_project_id=ex_project_id)
 
         # if project has been specified during driver initialization, then
         # return nodes for this project only
         if self.project_id:
-            return self.ex_list_volumes_for_project(
-                ex_project_id=self.project_id)
+            return self.list_volumes_for_project(ex_project_id=self.project_id)
 
         # In case of Python2 perform requests serially
         if asyncio is None:
             nodes = []
             for project in self.projects:
                 nodes.extend(
-                    self.ex_list_volumes_for_project(ex_project_id=project.id)
-                )
+                    self.list_volumes_for_project(ex_project_id=project.id))
             return nodes
         # In case of Python3 use asyncio to perform requests in parallel
         return self.list_resources_async('volumes')
 
-    def ex_list_volumes_for_project(self, ex_project_id, include='plan',
-                                    page=1, per_page=1000):
-        params = {
-            'include': include,
-            'page': page,
-            'per_page': per_page
-        }
-        data = self.connection.request(
-            '/projects/%s/storage' % (ex_project_id),
-            params=params).object['volumes']
+    def list_volumes_for_project(self,
+                                 ex_project_id,
+                                 include='plan',
+                                 page=1,
+                                 per_page=1000):
+        params = {'include': include, 'page': page, 'per_page': per_page}
+        data = self.connection.request('/projects/%s/storage' %
+                                       (ex_project_id),
+                                       params=params).object['volumes']
         return list(map(self._to_volume, data))
 
     def _to_volume(self, data):
-        return StorageVolume(id=data['id'], name=data['name'],
-                             size=data['size'], driver=self,
+        return StorageVolume(id=data['id'],
+                             name=data['name'],
+                             size=data['size'],
+                             driver=self,
                              extra=data)
 
-    def create_volume(self, size, location, plan='storage_1', description='',
-                      ex_project_id=None, locked=False, billing_cycle=None,
-                      customdata='', snapshot_policies=None, **kwargs):
+    def create_volume(self,
+                      size,
+                      location,
+                      plan='storage_1',
+                      description='',
+                      ex_project_id=None,
+                      locked=False,
+                      billing_cycle=None,
+                      customdata='',
+                      snapshot_policies=None,
+                      **kwargs):
         """
         Create a new volume.
 
@@ -681,8 +708,8 @@ def _list_async(driver):
             params['billing_cycle'] = billing_cycle
         if snapshot_policies:
             params['snapshot_policies'] = snapshot_policies
-        data = self.connection.request(
-            path, params=params, method='POST').object
+        data = self.connection.request(path, params=params,
+                                       method='POST').object
         return self._to_volume(data)
 
     def destroy_volume(self, volume):
@@ -711,9 +738,7 @@ def _list_async(driver):
         :rytpe: ``bool``
         """
         path = '/storage/%s/attachments' % volume.id
-        params = {
-            'device_id': node.id
-        }
+        params = {'device_id': node.id}
         res = self.connection.request(path, params=params, method='POST')
         return res.status == httplib.OK
 
@@ -743,8 +768,8 @@ def _list_async(driver):
                         attachment_id)['device']['href'].split('/')[-1]
                     if node_id != ex_node.id:
                         continue
-                path = '/storage/attachments/%s' % (
-                    ex_attachment_id or attachment_id)
+                path = '/storage/attachments/%s' % (ex_attachment_id
+                                                    or attachment_id)
                 result = self.connection.request(path, method='DELETE')
                 success = success and result.status == httplib.NO_CONTENT
 
@@ -797,16 +822,21 @@ def _list_async(driver):
         return list(map(self._to_volume_snapshot, data))
 
     def _to_volume_snapshot(self, data):
-        created = datetime.datetime.strptime(
-            data['created_at'], "%Y-%m-%dT%H:%M:%S")
+        created = datetime.datetime.strptime(data['created_at'],
+                                             "%Y-%m-%dT%H:%M:%S")
         return VolumeSnapshot(id=data['id'],
                               name=data['id'],
                               created=created,
                               state=data['status'],
-                              driver=self, extra=data)
+                              driver=self,
+                              extra=data)
 
-    def ex_modify_volume(self, volume, description=None, size=None,
-                         locked=None, billing_cycle=None,
+    def ex_modify_volume(self,
+                         volume,
+                         description=None,
+                         size=None,
+                         locked=None,
+                         billing_cycle=None,
                          customdata=None):
         path = '/storage/%s' % volume.id
         params = {}
@@ -863,5 +893,4 @@ class Project(object):
         self.extra['ssh_keys'] = project.get('ssh_keys')
 
     def __repr__(self):
-        return (('<Project: id=%s, name=%s>') %
-                (self.id, self.name))
+        return (('<Project: id=%s, name=%s>') % (self.id, self.name))
